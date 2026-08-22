@@ -185,6 +185,20 @@ td.edit input[type=number],
   text-align-last: right;
   padding-left: 0;
   padding-right: 0;
+  margin-left: 0;
+  display: block;
+}
+#detailTable td.edit[data-field="gst_tds"],
+#detailTable td.edit[data-field="sd_expected"],
+#detailTable td.edit[data-field="sd_received"],
+#detailTable td.edit[data-field="fp_expected"],
+#detailTable td.edit[data-field="fp_received"],
+#detailTableDash td.edit[data-field="gst_tds"],
+#detailTableDash td.edit[data-field="sd_expected"],
+#detailTableDash td.edit[data-field="sd_received"],
+#detailTableDash td.edit[data-field="fp_expected"],
+#detailTableDash td.edit[data-field="fp_received"] {
+  text-align: right !important;
 }
 td.edit input[type=date] { text-align: center; font-size: 11px; width: 116px; }
 .rowdel { opacity: 0; border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; line-height: 1; }
