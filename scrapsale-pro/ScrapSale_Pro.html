@@ -525,6 +525,8 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
             <input type="text" id="detailSearch" placeholder="Search this table..." style="min-width:170px"/>
             <div class="dropdown">
               <button class="btn" id="lotsColsBtn" type="button">Columns ▾</button>
+              <button class="btn" id="selectDetailColsBtn" type="button">Select columns</button>
+              <button class="btn" id="deselectDetailColsBtn" type="button">Deselect columns</button>
               <div class="col-picker-panel" id="lotsColPicker"></div>
             </div>
             <button class="btn" id="addColBtnLots" type="button">+ Add column</button>
@@ -3770,6 +3772,12 @@ function renderColPicker(panelId, layoutKind) {
     });
   });
 }
+function setAllDetailColumns(showAll) {
+  var catalog = allAssignableFields('detail');
+  pushHistory();
+  colLayout.detail = showAll ? catalog.map(function (c) { return c.key; }) : [catalog[0].key];
+  saveState(); renderAll();
+}
 function toggleColPicker(panelId, layoutKind, btn) {
   var panel = document.getElementById(panelId);
   var willOpen = !panel.classList.contains('open');
@@ -4416,6 +4424,8 @@ function init() {
   document.getElementById('dashColsBtn').addEventListener('click', function (e) {
     e.stopPropagation(); toggleColPicker('dashColPicker', 'detail', e.currentTarget);
   });
+  document.getElementById('selectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(true); });
+  document.getElementById('deselectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(false); });
   document.getElementById('lotsColsBtn').addEventListener('click', function (e) {
     e.stopPropagation(); toggleColPicker('lotsColPicker', 'detail', e.currentTarget);
   });
