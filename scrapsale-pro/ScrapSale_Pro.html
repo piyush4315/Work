@@ -346,7 +346,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
 .date-empty-editor { position: relative; width: 100%; }
 .date-empty-editor .empty-mark {
   position: absolute; inset: 0; z-index: 2; display: none; align-items: center;
-  justify-content: center; color: var(--muted); pointer-events: none;
+  justify-content: center; color: var(--muted); cursor: pointer;
 }
 .date-empty-editor.is-empty .empty-mark { display: flex; }
 .date-empty-editor:focus-within .empty-mark { display: none; }
@@ -4422,6 +4422,18 @@ function init() {
     e.preventDefault();
     e.stopPropagation();
     openInvoiceForLot(btn.getAttribute('data-inv-lot'));
+  });
+  document.addEventListener('click', function (e) {
+    var mark = e.target && e.target.closest && e.target.closest('.date-empty-editor .empty-mark');
+    if (!mark) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var input = mark.parentElement && mark.parentElement.querySelector('input[type="date"]');
+    if (!input) return;
+    input.focus();
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker(); } catch (err) {}
+    }
   });
   document.addEventListener('focusin', function (e) {
     if (e.target.matches && e.target.matches('table.lots-table input[data-lot]')) beginEdit(e.target);
