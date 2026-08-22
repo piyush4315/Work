@@ -7,7 +7,7 @@
 
 ## Your live lots are not in Git
 
-Edits you make in the browser are stored in **localStorage** (`scrapsale_pro_v5`), not in this folder. The key was bumped for the 2026-08-22 workbook refresh so existing browsers load the updated seed data.
+Edits you make in the browser are stored in **localStorage** (`scrapsale_pro_v6`), not in this folder. The key was bumped for the workbook refresh and Excel-order column layout so existing browsers load the updated seed data and columns.
 
 Before you switch machines or AIs:
 

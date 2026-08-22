@@ -38,7 +38,7 @@ scrapsale-pro/
 | What | Where |
 |---|---|
 | Code / UI / formulas | This Git repo (`ScrapSale_Pro.html`) |
-| Lots you type or import | Browser **localStorage** (`scrapsale_pro_v5`) — **not** in Git |
+| Lots you type or import | Browser **localStorage** (`scrapsale_pro_v6`) — **not** in Git |
 
 **Before you change computers, browsers, or AIs:**
 

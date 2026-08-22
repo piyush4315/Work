@@ -6,7 +6,7 @@
 2. A **JSON export** of live lots if any work was done in the browser  
    (`Export → JSON` inside the app)
 
-The HTML file does **not** contain edited lots. Those live in browser `localStorage` key `scrapsale_pro_v5`. The key was bumped for the 2026-08-22 workbook refresh.
+The HTML file does **not** contain edited lots. Those live in browser `localStorage` key `scrapsale_pro_v6`. The key was bumped for the workbook refresh and Excel-order column layout.
 
 ## What this project is
 

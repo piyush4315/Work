@@ -663,8 +663,8 @@ function fromISODate(iso) {
    total_received      = sd_received + fp_received
    outstanding         = total_receivables - total_received
    gst_tds (auto when >0) = round(gst / 9)               (TDS on GST)                                        */
-var NUM_FIELDS = ['qty','rate','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds_rate','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
-var DATE_FIELDS = ['sd_date','fp_date'];
+var NUM_FIELDS = ['qty','rate','mat_value','mat_value_plus_gst','gst','tcs','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','tds194o','gst_tds_rate','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','short_excess_payment','total_received','outstanding'];
+var DATE_FIELDS = ['sd_date','fp_date','sap_document_date','doc_invoice_date'];
 var EDITABLE_FIELDS = ['gst_tds_rate','gst_tds','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date'];
 
 function cleanNum(v) {
@@ -678,6 +678,10 @@ function normalizeLot(raw) {
   raw = raw || {};
   function has(k) { return raw[k] !== undefined && raw[k] !== null && String(raw[k]).trim() !== ''; }
   function N(k) { return numOr(cleanNum(raw[k])); }
+  function D(k) {
+    var v = strOr(raw[k]);
+    return (!v || v === '0' || v === '—') ? null : v;
+  }
   var r = {};
   r.lot_no = has('lot_no') ? N('lot_no') : 0;
   r.invoice_no = strOr(raw.invoice_no);
@@ -690,14 +694,18 @@ function normalizeLot(raw) {
   r.rate = N('rate');
   r.mat_value = has('mat_value') ? N('mat_value') : Math.round(r.qty * r.rate * 100) / 100;
   r.gst = N('gst');
+  r.mat_value_plus_gst = has('mat_value_plus_gst') ? N('mat_value_plus_gst') : (r.mat_value + r.gst);
   r.tcs = N('tcs');
   r.service_charge_mstc = has('service_charge_mstc') ? N('service_charge_mstc') : 0;
   r.tds194h = has('tds194h') ? N('tds194h') : 0;
   r.net_service_charge = has('net_service_charge') ? N('net_service_charge') : (r.service_charge_mstc - r.tds194h);
+  r.service_charge_to_mstc = has('service_charge_to_mstc') ? N('service_charge_to_mstc') : r.service_charge_mstc;
   r.tds194o = N('tds194o');
   r.gst_tds = N('gst_tds');
   if (has('gst_tds_rate')) {
     r.gst_tds_rate = N('gst_tds_rate');
+    /* Excel stores 2% as 0.02; the app displays and edits percentage points. */
+    if (r.gst_tds_rate > 0 && r.gst_tds_rate < 1) r.gst_tds_rate = Math.round(r.gst_tds_rate * 10000) / 100;
   } else if (r.mat_value) {
     r.gst_tds_rate = Math.round(r.gst_tds / r.mat_value * 10000) / 100;
   } else {
@@ -710,10 +718,13 @@ function normalizeLot(raw) {
   r.fp_expected = has('fp_expected') ? N('fp_expected') : (r.total_receivables - r.sd_expected);
   r.sd_received = N('sd_received');
   r.fp_received = N('fp_received');
-  r.sd_date = has('sd_date') ? strOr(raw.sd_date) : null;
-  r.fp_date = has('fp_date') ? strOr(raw.fp_date) : null;
+  r.sd_date = D('sd_date');
+  r.fp_date = D('fp_date');
   r.total_received = has('total_received') ? N('total_received') : (r.sd_received + r.fp_received);
   r.outstanding = has('outstanding') ? N('outstanding') : (r.total_receivables - r.total_received);
+  r.short_excess_payment = has('short_excess_payment') ? N('short_excess_payment') : r.outstanding;
+  r.sap_document_date = D('sap_document_date');
+  r.doc_invoice_date = D('doc_invoice_date');
   var m = raw.manual || {};
   var sdDerived = Math.round(r.mat_value * 0.25);
   var fpDerived = r.total_receivables - r.sd_expected;
@@ -750,6 +761,7 @@ function recalcRow(r, changed) {
   if (changed.indexOf('sd_expected') !== -1 && !r._manual.sd_expected) r.sd_expected = Math.round(n('mat_value') * 0.25);
   r.total_received = n('sd_received') + n('fp_received');
   r.outstanding = n('total_receivables') - r.total_received;
+  r.short_excess_payment = r.outstanding;
 }
 function cloneLot(r) { var o = {}; for (var k in r) o[k] = r[k]; return o; }
 
@@ -977,7 +989,12 @@ var XLSX_COLS = [
   ['total_received', 'Total Received', 'f:S{r}+V{r}'],
   ['outstanding', 'Outstanding', 'f:Q{r}-X{r}'],
   ['invoice_no', 'Invoice No', 's'],
-  ['invoice_link', 'Invoice Link', 's']
+  ['invoice_link', 'Invoice Link', 's'],
+  ['mat_value_plus_gst', 'Mat. Value + GST', 'n'],
+  ['service_charge_to_mstc', 'Service charge to MSTC', 'n'],
+  ['short_excess_payment', 'Short/(Excess) Payment', 'n'],
+  ['sap_document_date', 'SAP Document Date', 's'],
+  ['doc_invoice_date', 'Doc./Invoice Date', 's']
 ];
 function colLetter(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; } return s; }
 function escXml(s) {
@@ -1034,7 +1051,7 @@ function buildDataSheetXml(lots, customCols) {
   var lastData = lots.length + 1;
   var tRow = lastData + 1;
   var lastCol = colLetter(COLS.length - 1);
-  var moneyStyle = { mat_value: 1, gst: 1, tcs: 1, service_charge_mstc: 1, tds194h: 1, net_service_charge: 1, tds194o: 1, gst_tds: 1, total_receivables: 1, sd_expected: 1, sd_received: 1, fp_expected: 1, fp_received: 1, total_received: 1, outstanding: 1 };
+  var moneyStyle = { mat_value: 1, mat_value_plus_gst: 1, gst: 1, tcs: 1, service_charge_mstc: 1, tds194h: 1, net_service_charge: 1, service_charge_to_mstc: 1, tds194o: 1, gst_tds: 1, total_receivables: 1, sd_expected: 1, sd_received: 1, fp_expected: 1, fp_received: 1, short_excess_payment: 1, total_received: 1, outstanding: 1 };
   var rows = [];
   rows.push('<row r="1" ht="22" customHeight="1">' + COLS.map(function (c, i) {
     return cellInline(colLetter(i) + '1', c[1], 4);
@@ -1069,7 +1086,7 @@ function buildDataSheetXml(lots, customCols) {
     }).join('');
     rows.push('<row r="' + rowN + '">' + cells + '</row>');
   });
-  var sumCols = ['qty','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
+  var sumCols = ['qty','mat_value','mat_value_plus_gst','gst','tcs','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','tds194o','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','short_excess_payment','total_received','outstanding'];
   var tCells = COLS.map(function (c, i) {
     var ref = colLetter(i) + tRow;
     if (c[0] === 'buyer') return cellInline(ref, 'TOTAL', 16);
@@ -1667,16 +1684,20 @@ var HEADER_ALIASES = {
   'invoice no': 'invoice_no', 'invoice no.': 'invoice_no', 'invoice number': 'invoice_no', 'invoice': 'invoice_no',
   'invoice link': 'invoice_link', 'invoice url': 'invoice_link', 'invoice pdf': 'invoice_link', 'drive link': 'invoice_link',
   'buyer': 'buyer', 'buyer name': 'buyer',
-  'auction': 'auction', 'auction no': 'auction', 'auction number': 'auction', 'auction id': 'auction',
+  'auction': 'auction', 'auction no': 'auction', 'auction number': 'auction', 'auction id': 'auction', 'bid sheet': 'auction', 'bid sheet no': 'auction',
   'material': 'lot_name', 'material type': 'lot_name', 'lot name': 'lot_name', 'item': 'lot_name', 'description': 'lot_name', 'item description': 'lot_name',
   'unit': 'unit', 'uom': 'unit',
   'qty': 'qty', 'quantity': 'qty',
   'rate': 'rate', 'price': 'rate', 'unit rate': 'rate',
-  'material value': 'mat_value', 'mat value': 'mat_value', 'mrp value': 'mat_value', 'value': 'mat_value', 'material value (rs)': 'mat_value',
+  'material value': 'mat_value', 'mat value': 'mat_value', 'mat. value': 'mat_value', 'mrp value': 'mat_value', 'value': 'mat_value', 'material value (rs)': 'mat_value',
+  'mat. value + gst': 'mat_value_plus_gst', 'mat value + gst': 'mat_value_plus_gst', 'material value + gst': 'mat_value_plus_gst',
   'gst': 'gst', 'gst amount': 'gst',
   'tcs': 'tcs', 'tcs amount': 'tcs',
   'mstc service charge': 'service_charge_mstc', 'service charge mstc': 'service_charge_mstc', 'service charge': 'service_charge_mstc', 'sc mstc': 'service_charge_mstc',
+  'mat. value + gst': 'mat_value_plus_gst', 'mat value + gst': 'mat_value_plus_gst',
+  'service charge to mstc': 'service_charge_to_mstc', 'service charge to mstc ': 'service_charge_to_mstc',
   'tds 194h': 'tds194h', 'tds194h': 'tds194h',
+  'tds u/s 194(h)': 'tds194h', 'tds u/s 194(o)': 'tds194o',
   'net service charge': 'net_service_charge', 'net sc': 'net_service_charge',
   'tds 194o': 'tds194o', 'tds194o': 'tds194o', 'tds 194q': 'tds194o', 'tds194q': 'tds194o',
   'gst tds rate': 'gst_tds_rate', 'gst tds rate %': 'gst_tds_rate', 'gst-tds rate': 'gst_tds_rate', 'tds rate': 'gst_tds_rate', 'gstr tds rate': 'gst_tds_rate',
@@ -1684,20 +1705,34 @@ var HEADER_ALIASES = {
   'total receivables in cash': 'total_receivables', 'total receivables': 'total_receivables',
   'total invoice': 'total_receivables', 'invoice total': 'total_receivables', 'tric': 'total_receivables',
   'total rec. in cash': 'total_receivables', 'total receivables in cash (rs)': 'total_receivables',
-  'sd expected': 'sd_expected', 'security deposit expected': 'sd_expected', 'advance expected': 'sd_expected',
-  'sd received': 'sd_received', 'security deposit received': 'sd_received', 'advance received': 'sd_received',
+  'sd expected': 'sd_expected', 'security deposit expected': 'sd_expected', 'security deposit (expected)': 'sd_expected', 'advance expected': 'sd_expected',
+  'sd received': 'sd_received', 'security deposit received': 'sd_received', 'security deposit (received)': 'sd_received', 'advance received': 'sd_received',
   'sd date': 'sd_date', 'security deposit date': 'sd_date', 'advance date': 'sd_date',
-  'fp expected': 'fp_expected', 'final payment expected': 'fp_expected', 'balance expected': 'fp_expected',
-  'fp received': 'fp_received', 'final payment received': 'fp_received', 'balance received': 'fp_received',
+  'fp expected': 'fp_expected', 'final payment expected': 'fp_expected', 'final payment (expected)': 'fp_expected', 'balance expected': 'fp_expected',
+  'fp received': 'fp_received', 'final payment received': 'fp_received', 'final payment (received)': 'fp_received', 'balance received': 'fp_received',
   'fp date': 'fp_date', 'final payment date': 'fp_date', 'balance date': 'fp_date',
+  'short/(excess) payment': 'short_excess_payment', 'short excess payment': 'short_excess_payment',
+  'sap document date': 'sap_document_date', 'doc./invoice date': 'doc_invoice_date', 'doc/invoice date': 'doc_invoice_date',
+  'date of receipt': 'sd_date',
   'total received': 'total_received', 'received': 'total_received',
   'outstanding': 'outstanding', 'balance outstanding': 'outstanding', 'pending': 'outstanding'
 };
 function mapHeaderRow(row) {
-  var map = {};
+  var map = {}, duplicateUse = {};
   row.forEach(function (h, i) {
     var k = strOr(h).toLowerCase().replace(/\s+/g, ' ');
-    var f = HEADER_ALIASES[k];
+    var f;
+    /* Final Calculation Sheet has two identical "Service Charge to MSTC"
+       and "Date of Receipt" headers; map the first/second occurrence distinctly. */
+    if (k === 'service charge to mstc') {
+      duplicateUse[k] = (duplicateUse[k] || 0) + 1;
+      f = duplicateUse[k] === 1 ? 'service_charge_mstc' : 'service_charge_to_mstc';
+    } else if (k === 'date of receipt') {
+      duplicateUse[k] = (duplicateUse[k] || 0) + 1;
+      f = duplicateUse[k] === 1 ? 'sd_date' : 'fp_date';
+    } else {
+      f = HEADER_ALIASES[k];
+    }
     if (f && map[i] === undefined) map[i] = f;
   });
   return map;
@@ -1752,14 +1787,19 @@ function remapKeys(obj) {
 }
 
 /* ---------------- CSV ---------------- */
+/* Export order mirrors the source workbook, followed by app-only calculated fields. */
 var EXPORT_COLS = [
-  ['lot_no', 'Lot No'], ['invoice_no', 'Invoice No'], ['invoice_link', 'Invoice Link'], ['buyer', 'Buyer'], ['auction', 'Auction'], ['lot_name', 'Material'],
-  ['unit', 'Unit'], ['qty', 'Qty'], ['rate', 'Rate'], ['mat_value', 'Material Value'],
-  ['gst', 'GST'], ['tcs', 'TCS'], ['service_charge_mstc', 'MSTC Service Charge'], ['tds194h', 'TDS 194H'],
-  ['net_service_charge', 'Net Service Charge'], ['tds194o', 'TDS 194O'], ['gst_tds_rate', 'GST TDS Rate %'], ['gst_tds', 'GST TDS'],
-  ['total_receivables', 'Total Receivables in Cash'], ['sd_expected', 'SD Expected'], ['sd_received', 'SD Received'],
-  ['sd_date', 'SD Date'], ['fp_expected', 'FP Expected'], ['fp_received', 'FP Received'], ['fp_date', 'FP Date'],
-  ['total_received', 'Total Received'], ['outstanding', 'Outstanding']
+  ['qty', 'Quantity'], ['lot_name', 'Lot Name'], ['rate', 'Rate'], ['auction', 'Bid Sheet'], ['unit', 'Unit'],
+  ['lot_no', 'Lot No.'], ['buyer', 'Buyer'], ['mat_value', 'Mat. Value'], ['gst', 'GST'],
+  ['mat_value_plus_gst', 'Mat. Value + GST'], ['tcs', 'TCS'], ['tds194o', 'TDS u/s 194(O)'],
+  ['service_charge_mstc', 'Service Charge to MSTC'], ['tds194h', 'TDS u/s 194(H)'],
+  ['net_service_charge', 'Net Service Charge (post TDS 194H)'], ['service_charge_to_mstc', 'Service charge to MSTC'],
+  ['gst_tds_rate', 'GST TDS Rate'], ['gst_tds', 'GST TDS'], ['total_receivables', 'Total Receivables in Cash'],
+  ['sd_expected', 'Security Deposit (Expected)'], ['sd_received', 'Security Deposit (Received)'], ['sd_date', 'SD Date'],
+  ['fp_expected', 'Final Payment (Expected)'], ['fp_received', 'Final Payment (Received)'], ['fp_date', 'FP Date'],
+  ['short_excess_payment', 'Short/(Excess) Payment'], ['invoice_no', 'Invoice No.'],
+  ['sap_document_date', 'SAP Document Date'], ['doc_invoice_date', 'Doc./Invoice Date'],
+  ['total_received', 'Total Received'], ['outstanding', 'Outstanding'], ['invoice_link', 'Invoice Link']
 ];
 function csvEsc(v) {
   v = v === null || v === undefined ? '' : String(v);
@@ -1777,7 +1817,7 @@ function csvExport(lots, customCols) {
     row = row.concat(customCols.map(function (n) { return csvEsc(strOr(r._extra && r._extra[n])); }));
     lines.push(row.join(','));
   });
-  var sumSet = new Set(['qty','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding']);
+  var sumSet = new Set(['qty','mat_value','mat_value_plus_gst','gst','tcs','tds194o','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','short_excess_payment','total_received','outstanding']);
   var tot = EXPORT_COLS.map(function (c) {
     if (sumSet.has(c[0])) return csvEsc(String(sumField(lots, c[0])));
     if (c[0] === 'buyer') return 'TOTAL';
@@ -1973,13 +2013,13 @@ function htmlExport(lots, customCols) {
     var cells = EXPORT_COLS.map(function (c) {
       var f = c[0], v = r[f];
       var cls = 'num';
-      if (f === 'buyer' || f === 'lot_name' || f === 'unit') cls = 'txt';
-      if (f === 'sd_date' || f === 'fp_date') cls = 'dt';
+      if (f === 'buyer' || f === 'lot_name' || f === 'unit' || f === 'invoice_no' || f === 'sap_document_date') cls = 'txt';
+      if (f === 'sd_date' || f === 'fp_date' || f === 'doc_invoice_date') cls = 'dt';
       if (f === 'total_receivables' || f === 'total_received') cls += ' strong';
       if (f === 'outstanding') cls += ' ' + (numOr(v) > 1 ? 'pos' : (numOr(v) < -1 ? 'neg' : 'zero'));
       var disp;
-      if (f === 'sd_date' || f === 'fp_date') disp = v ? escHtml(v) : '—';
-      else if (f === 'lot_no' || f === 'auction') disp = escHtml(v);
+      if (f === 'sd_date' || f === 'fp_date' || f === 'doc_invoice_date') disp = v ? escHtml(v) : '—';
+      else if (f === 'lot_no' || f === 'auction' || f === 'sap_document_date') disp = escHtml(v);
       else if (typeof v === 'number') disp = inr(v, Number.isInteger(v) ? 0 : 2);
       else disp = escHtml(v);
       return '<td class="' + cls + '">' + disp + '</td>';
@@ -1990,8 +2030,9 @@ function htmlExport(lots, customCols) {
   var totRow = '<tr class="totals"><td colspan="5" class="txt">TOTAL (' + lots.length + ' lots)</td>' +
     EXPORT_COLS.slice(5).map(function (c) {
       var f = c[0];
-      if (f === 'sd_date' || f === 'fp_date') return '<td class="dt"></td>';
-      if (f === 'buyer' || f === 'lot_name' || f === 'unit') return '<td></td>';
+      if (f === 'sd_date' || f === 'fp_date' || f === 'doc_invoice_date') return '<td class="dt"></td>';
+      var meta = FIELD_META[f];
+      if (!meta || !meta.sum) return '<td></td>';
       var s = sumField(lots, f);
       return '<td class="num strong">' + inr(s, Number.isInteger(s) ? 0 : 2) + '</td>';
     }).join('') +
@@ -2266,11 +2307,11 @@ if (typeof module !== 'undefined' && module.exports) {
 /* ================================================================
    ScrapSale Pro — application layer
    ================================================================ */
-var SAMPLE_DATA = [{"unit":"KG","qty":669,"rate":1181,"auction":21980,"lot_name":"SCRAP COPPER OF T/F WINDING (Oil impregnated paper insulated T/F winding)","lot_no":1763,"buyer":"AL HAMD TRADE CORPORATION","mat_value":790089,"gst":142216,"tcs":18646,"tds194o":790,"service_charge_mstc":20977,"tds194h":356,"net_service_charge":20621,"gst_tds_rate":2.0,"gst_tds":15802,"total_receivables":913738,"sd_expected":197522,"sd_received":0,"sd_date":null,"fp_expected":716215,"fp_received":716216,"fp_date":"18.08.2026","total_received":716216,"outstanding":197522},{"unit":"NO","qty":270,"rate":580,"auction":21977,"lot_name":"Scrap of Empty oil drum","lot_no":1874,"buyer":"NATIONAL ENTERPRISES","mat_value":156600,"gst":28188,"tcs":3696,"tds194o":157,"service_charge_mstc":4158,"tds194h":70,"net_service_charge":4087,"gst_tds_rate":0,"gst_tds":0,"total_receivables":184240,"sd_expected":39150,"sd_received":39150,"sd_date":"13.08.2026","fp_expected":145090,"fp_received":0,"fp_date":null,"total_received":39150,"outstanding":145090},{"unit":"KG","qty":28,"rate":1456,"auction":21977,"lot_name":"Scrap of Copper of faulty AC compressor","lot_no":1875,"buyer":"F R KHANS ENTERPRISES","mat_value":40768,"gst":7338,"tcs":962,"tds194o":41,"service_charge_mstc":1082,"tds194h":18,"net_service_charge":1064,"gst_tds_rate":2.0,"gst_tds":815,"total_receivables":47149,"sd_expected":10192,"sd_received":10192,"sd_date":"11.08.2026","fp_expected":36957,"fp_received":37772,"fp_date":"20.08.2026","total_received":47964,"outstanding":-815},{"unit":"KG","qty":3000,"rate":66,"auction":21977,"lot_name":"Scrap of MS (extracted from equip cage and empty Sf6 gas cylinder)","lot_no":1876,"buyer":"F R KHANS ENTERPRISES","mat_value":198000,"gst":35640,"tcs":4673,"tds194o":198,"service_charge_mstc":5257,"tds194h":89,"net_service_charge":5168,"gst_tds_rate":2.0,"gst_tds":3960,"total_receivables":228987,"sd_expected":49500,"sd_received":49500,"sd_date":"11.08.2026","fp_expected":179487,"fp_received":183446,"fp_date":"20.08.2026","total_received":232946,"outstanding":-3959},{"unit":"KG","qty":7253,"rate":227,"auction":21980,"lot_name":"SCRAP ACSR CONDUCTORS (Conductor Pieces)","lot_no":1923,"buyer":"OMKAR STEELS","mat_value":1646431,"gst":296358,"tcs":38856,"tds194o":1646,"service_charge_mstc":43713,"tds194h":741,"net_service_charge":42972,"gst_tds_rate":2.0,"gst_tds":32929,"total_receivables":1904097,"sd_expected":411608,"sd_received":411608,"sd_date":"14.08.2026","fp_expected":1492489,"fp_received":0,"fp_date":null,"total_received":411608,"outstanding":1492489},{"unit":"NO","qty":1,"rate":2787314,"auction":21977,"lot_name":"Scrap Power Transformer","lot_no":1976,"buyer":"SHAR JAHAN TRADERS","mat_value":2787314,"gst":501717,"tcs":65781,"tds194o":2787,"service_charge_mstc":74003,"tds194h":1254,"net_service_charge":72749,"gst_tds_rate":0,"gst_tds":0,"total_receivables":3279275,"sd_expected":696829,"sd_received":696829,"sd_date":"13.08.2026","fp_expected":2582446,"fp_received":2582447,"fp_date":"13.08.2026","total_received":3279276,"outstanding":-1,"invoice_no":"DR2640100023"},{"unit":"NO","qty":4,"rate":51511,"auction":21977,"lot_name":"Scrap of 132 KV CT","lot_no":2002,"buyer":"NATIONAL ENTERPRISES","mat_value":206044,"gst":37088,"tcs":4863,"tds194o":206,"service_charge_mstc":5470,"tds194h":93,"net_service_charge":5378,"gst_tds_rate":0,"gst_tds":0,"total_receivables":242411,"sd_expected":51511,"sd_received":51511,"sd_date":"13.08.2026","fp_expected":190900,"fp_received":0,"fp_date":null,"total_received":51511,"outstanding":190900},{"unit":"NO","qty":1,"rate":65007,"auction":21977,"lot_name":"Scrap of 145 KV CB","lot_no":2003,"buyer":"NATIONAL ENTERPRISES","mat_value":65007,"gst":11701,"tcs":1534,"tds194o":65,"service_charge_mstc":1726,"tds194h":29,"net_service_charge":1697,"gst_tds_rate":0,"gst_tds":0,"total_receivables":76481,"sd_expected":16252,"sd_received":16252,"sd_date":"13.08.2026","fp_expected":60229,"fp_received":0,"fp_date":null,"total_received":16252,"outstanding":60229},{"unit":"NO","qty":1,"rate":70006,"auction":21977,"lot_name":"Scrap of 220KV CT","lot_no":2005,"buyer":"NATIONAL ENTERPRISES","mat_value":70006,"gst":12601,"tcs":1652,"tds194o":70,"service_charge_mstc":1859,"tds194h":32,"net_service_charge":1827,"gst_tds_rate":0,"gst_tds":0,"total_receivables":82362,"sd_expected":17502,"sd_received":17502,"sd_date":"13.08.2026","fp_expected":64861,"fp_received":0,"fp_date":null,"total_received":17502,"outstanding":64860},{"unit":"NO","qty":25,"rate":700,"auction":21977,"lot_name":"Scrap of empty oil drums","lot_no":2006,"buyer":"STERLING ENTERPRISES","mat_value":17500,"gst":3150,"tcs":413,"tds194o":18,"service_charge_mstc":465,"tds194h":8,"net_service_charge":457,"gst_tds_rate":0,"gst_tds":0,"total_receivables":20589,"sd_expected":4375,"sd_received":4375,"sd_date":"11.08.2026","fp_expected":16214,"fp_received":16214,"fp_date":"11.08.2026","total_received":20589,"outstanding":0,"invoice_no":"DR2640100018"},{"unit":"NO","qty":1,"rate":3857116,"auction":21977,"lot_name":"SCRAP POWER TRANSFORMER","lot_no":2007,"buyer":"SHAR JAHAN TRADERS","mat_value":3857116,"gst":694281,"tcs":91028,"tds194o":3857,"service_charge_mstc":102406,"tds194h":1736,"net_service_charge":100671,"gst_tds_rate":0,"gst_tds":0,"total_receivables":4537897,"sd_expected":964279,"sd_received":964279,"sd_date":"13.08.2026","fp_expected":3573618,"fp_received":3573619,"fp_date":"13.08.2026","total_received":4537898,"outstanding":-1,"invoice_no":"DR2640100024"},{"unit":"NO","qty":250,"rate":543,"auction":21977,"lot_name":"Scrap of empty oil Druam","lot_no":2008,"buyer":"HIND TRADERS","mat_value":135750,"gst":24435,"tcs":3204,"tds194o":136,"service_charge_mstc":3604,"tds194h":61,"net_service_charge":3543,"gst_tds_rate":0,"gst_tds":0,"total_receivables":159710,"sd_expected":33938,"sd_received":33938,"sd_date":"14.08.2026","fp_expected":125772,"fp_received":125772,"fp_date":"18.08.2026","total_received":159710,"outstanding":0},{"unit":"NO","qty":22,"rate":700,"auction":21977,"lot_name":"Scrap of empty oil Barrel","lot_no":2011,"buyer":"STERLING ENTERPRISES","mat_value":15400,"gst":2772,"tcs":363,"tds194o":15,"service_charge_mstc":409,"tds194h":7,"net_service_charge":402,"gst_tds_rate":0,"gst_tds":0,"total_receivables":18118,"sd_expected":3850,"sd_received":3850,"sd_date":"11.08.2026","fp_expected":14268,"fp_received":14267,"fp_date":"11.08.2026","total_received":18117,"outstanding":1,"invoice_no":"DR2640100019"},{"unit":"NO","qty":100,"rate":710,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2015,"buyer":"STERLING ENTERPRISES","mat_value":71000,"gst":12780,"tcs":1676,"tds194o":71,"service_charge_mstc":1885,"tds194h":32,"net_service_charge":1853,"gst_tds_rate":0,"gst_tds":0,"total_receivables":83532,"sd_expected":17750,"sd_received":17750,"sd_date":"11.08.2026","fp_expected":65782,"fp_received":65782,"fp_date":"11.08.2026","total_received":83532,"outstanding":0,"invoice_no":"DR2640100020"},{"unit":"NO","qty":1,"rate":220001,"auction":21978,"lot_name":"Scrap of 220 KV Circuit Breaker","lot_no":2018,"buyer":"NATIONAL ENTERPRISES","mat_value":220001,"gst":39600,"tcs":5192,"tds194o":220,"service_charge_mstc":5841,"tds194h":99,"net_service_charge":5742,"gst_tds_rate":0,"gst_tds":0,"total_receivables":258831,"sd_expected":55000,"sd_received":55000,"sd_date":"13.08.2026","fp_expected":203831,"fp_received":0,"fp_date":null,"total_received":55000,"outstanding":203831},{"unit":"NO","qty":1,"rate":210001,"auction":21978,"lot_name":"Scrap of 220 KV Circuit Breaker","lot_no":2019,"buyer":"NATIONAL ENTERPRISES","mat_value":210001,"gst":37800,"tcs":4956,"tds194o":210,"service_charge_mstc":5576,"tds194h":95,"net_service_charge":5481,"gst_tds_rate":0,"gst_tds":0,"total_receivables":247066,"sd_expected":52500,"sd_received":52500,"sd_date":"13.08.2026","fp_expected":194566,"fp_received":0,"fp_date":null,"total_received":52500,"outstanding":194566},{"unit":"KG","qty":3500,"rate":333,"auction":21978,"lot_name":"SCRAP 80MM² AAAC EARTHWIRE","lot_no":2020,"buyer":"OMKAR STEELS","mat_value":1165500,"gst":209790,"tcs":27506,"tds194o":1166,"service_charge_mstc":30944,"tds194h":524,"net_service_charge":30420,"gst_tds_rate":2.0,"gst_tds":23310,"total_receivables":1347901,"sd_expected":291375,"sd_received":291375,"sd_date":"10.08.2026","fp_expected":1056526,"fp_received":1056525,"fp_date":"10.08.2026","total_received":1347900,"outstanding":1,"invoice_no":"DR2640100017"},{"unit":"NO","qty":3,"rate":110200,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2022,"buyer":"NATIONAL SCRAP AND BUILDING MATERIAL SUPPLIER","mat_value":330600,"gst":59508,"tcs":7802,"tds194o":331,"service_charge_mstc":8777,"tds194h":149,"net_service_charge":8629,"gst_tds_rate":0,"gst_tds":0,"total_receivables":388951,"sd_expected":82650,"sd_received":82650,"sd_date":"14.08.2026","fp_expected":306301,"fp_received":306301,"fp_date":"21.08.2026","total_received":388951,"outstanding":0},{"unit":"NO","qty":3,"rate":83743,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2023,"buyer":"NATIONAL ENTERPRISES","mat_value":251229,"gst":45221,"tcs":5929,"tds194o":251,"service_charge_mstc":6670,"tds194h":113,"net_service_charge":6557,"gst_tds_rate":0,"gst_tds":0,"total_receivables":295571,"sd_expected":62807,"sd_received":62807,"sd_date":"13.08.2026","fp_expected":232764,"fp_received":0,"fp_date":null,"total_received":62807,"outstanding":232764},{"unit":"NO","qty":90,"rate":700,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2025,"buyer":"STERLING ENTERPRISES","mat_value":63000,"gst":11340,"tcs":1487,"tds194o":63,"service_charge_mstc":1673,"tds194h":28,"net_service_charge":1644,"gst_tds_rate":0,"gst_tds":0,"total_receivables":74120,"sd_expected":15750,"sd_received":15750,"sd_date":"11.08.2026","fp_expected":58370,"fp_received":58418,"fp_date":"11.08.2026","total_received":74168,"outstanding":-48,"invoice_no":"DR2640100021"},{"unit":"NO","qty":1,"rate":50003,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2027,"buyer":"NATIONAL ENTERPRISES","mat_value":50003,"gst":9001,"tcs":1180,"tds194o":50,"service_charge_mstc":1328,"tds194h":23,"net_service_charge":1305,"gst_tds_rate":0,"gst_tds":0,"total_receivables":58829,"sd_expected":12501,"sd_received":12501,"sd_date":"13.08.2026","fp_expected":46328,"fp_received":0,"fp_date":null,"total_received":12501,"outstanding":46328},{"unit":"NO","qty":1000,"rate":517,"auction":21978,"lot_name":"Scrap Empty Oil Drum/ Barrel","lot_no":2033,"buyer":"WATAN SCRAP TRADERS","mat_value":517000,"gst":93060,"tcs":12201,"tds194o":517,"service_charge_mstc":13726,"tds194h":233,"net_service_charge":13494,"gst_tds_rate":0,"gst_tds":0,"total_receivables":608251,"sd_expected":129250,"sd_received":129250,"sd_date":"14.08.2026","fp_expected":479001,"fp_received":479001,"fp_date":"21.08.2026","total_received":608251,"outstanding":0},{"unit":"NO","qty":2,"rate":14001,"auction":21978,"lot_name":"Scrap of 132 KV Wave Trap","lot_no":2035,"buyer":"NATIONAL ENTERPRISES","mat_value":28002,"gst":5040,"tcs":661,"tds194o":28,"service_charge_mstc":743,"tds194h":13,"net_service_charge":731,"gst_tds_rate":0,"gst_tds":0,"total_receivables":32944,"sd_expected":7001,"sd_received":7001,"sd_date":"13.08.2026","fp_expected":25944,"fp_received":0,"fp_date":null,"total_received":7001,"outstanding":25943},{"unit":"MT","qty":8.2,"rate":67000,"auction":21978,"lot_name":"Mix Scrap (Tower angles & 0.2 ACSR Condutor pieces)","lot_no":2036,"buyer":"M I SCRAP TRADERS","mat_value":549400,"gst":98892,"tcs":12966,"tds194o":549,"service_charge_mstc":14587,"tds194h":247,"net_service_charge":14339,"gst_tds_rate":2.0,"gst_tds":10988,"total_receivables":635381,"sd_expected":137350,"sd_received":137350,"sd_date":"14.08.2026","fp_expected":498031,"fp_received":0,"fp_date":null,"total_received":137350,"outstanding":498031},{"unit":"NO","qty":50,"rate":531,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2037,"buyer":"WATAN SCRAP TRADERS","mat_value":26550,"gst":4779,"tcs":627,"tds194o":27,"service_charge_mstc":705,"tds194h":12,"net_service_charge":693,"gst_tds_rate":0,"gst_tds":0,"total_receivables":31236,"sd_expected":6638,"sd_received":6638,"sd_date":"14.08.2026","fp_expected":24599,"fp_received":24598,"fp_date":"21.08.2026","total_received":31236,"outstanding":0},{"unit":"NO","qty":3,"rate":90002,"auction":21978,"lot_name":"Scrap of 33 KV CT","lot_no":2040,"buyer":"STERLING ENTERPRISES","mat_value":270006,"gst":48601,"tcs":6372,"tds194o":270,"service_charge_mstc":7169,"tds194h":122,"net_service_charge":7047,"gst_tds_rate":0,"gst_tds":0,"total_receivables":317662,"sd_expected":67502,"sd_received":67502,"sd_date":"11.08.2026","fp_expected":250161,"fp_received":0,"fp_date":null,"total_received":67502,"outstanding":250160},{"unit":"NO","qty":5,"rate":80000,"auction":21979,"lot_name":"Scrap of 132 KV CT","lot_no":2043,"buyer":"NATIONAL ENTERPRISES","mat_value":400000,"gst":72000,"tcs":9440,"tds194o":400,"service_charge_mstc":10620,"tds194h":180,"net_service_charge":10440,"gst_tds_rate":0,"gst_tds":0,"total_receivables":470600,"sd_expected":100000,"sd_received":100000,"sd_date":"13.08.2026","fp_expected":370600,"fp_received":0,"fp_date":null,"total_received":100000,"outstanding":370600},{"unit":"KG","qty":670,"rate":309,"auction":21979,"lot_name":"Scrap of AAAC Earth wire","lot_no":2046,"buyer":"SAHARA ENTERPRISES","mat_value":207030,"gst":37265,"tcs":4886,"tds194o":207,"service_charge_mstc":5497,"tds194h":93,"net_service_charge":5403,"gst_tds_rate":2.0,"gst_tds":4141,"total_receivables":239430,"sd_expected":51758,"sd_received":51758,"sd_date":"11.08.2026","fp_expected":187672,"fp_received":191812,"fp_date":"21.08.2026","total_received":243570,"outstanding":-4140},{"unit":"NO","qty":2,"rate":80006,"auction":21979,"lot_name":"Scrap of 220 KV CT","lot_no":2055,"buyer":"NATIONAL ENTERPRISES","mat_value":160012,"gst":28802,"tcs":3776,"tds194o":160,"service_charge_mstc":4248,"tds194h":72,"net_service_charge":4176,"gst_tds_rate":0,"gst_tds":0,"total_receivables":188254,"sd_expected":40003,"sd_received":40003,"sd_date":"13.08.2026","fp_expected":148251,"fp_received":0,"fp_date":null,"total_received":40003,"outstanding":148251},{"unit":"NO","qty":1,"rate":29502,"auction":21979,"lot_name":"Scrap of 33 KV GCB","lot_no":2059,"buyer":"NATIONAL ENTERPRISES","mat_value":29502,"gst":5310,"tcs":696,"tds194o":30,"service_charge_mstc":783,"tds194h":13,"net_service_charge":770,"gst_tds_rate":0,"gst_tds":0,"total_receivables":34709,"sd_expected":7376,"sd_received":7376,"sd_date":"13.08.2026","fp_expected":27334,"fp_received":0,"fp_date":null,"total_received":7376,"outstanding":27333},{"unit":"NO","qty":30,"rate":702,"auction":21979,"lot_name":"Scrap of Empty oil Barrels","lot_no":2062,"buyer":"STERLING ENTERPRISES","mat_value":21060,"gst":3791,"tcs":497,"tds194o":21,"service_charge_mstc":559,"tds194h":9,"net_service_charge":550,"gst_tds_rate":0,"gst_tds":0,"total_receivables":24777,"sd_expected":5265,"sd_received":5265,"sd_date":"11.08.2026","fp_expected":19512,"fp_received":19512,"fp_date":"11.08.2026","total_received":24777,"outstanding":0,"invoice_no":"DR2640100022"},{"unit":"NO","qty":150,"rate":571,"auction":21980,"lot_name":"Scrap of empty oil drums","lot_no":2067,"buyer":"WATAN SCRAP TRADERS","mat_value":85650,"gst":15417,"tcs":2021,"tds194o":86,"service_charge_mstc":2274,"tds194h":39,"net_service_charge":2235,"gst_tds_rate":0,"gst_tds":0,"total_receivables":100767,"sd_expected":21413,"sd_received":21413,"sd_date":"14.08.2026","fp_expected":79355,"fp_received":79354,"fp_date":"20.08.2026","total_received":100767,"outstanding":0},{"unit":"NO","qty":1,"rate":54000,"auction":21980,"lot_name":"Scrap of 33 KV CB","lot_no":2069,"buyer":"STERLING ENTERPRISES","mat_value":54000,"gst":9720,"tcs":1274,"tds194o":54,"service_charge_mstc":1434,"tds194h":24,"net_service_charge":1409,"gst_tds_rate":0,"gst_tds":0,"total_receivables":63531,"sd_expected":13500,"sd_received":13500,"sd_date":"11.08.2026","fp_expected":50031,"fp_received":0,"fp_date":null,"total_received":13500,"outstanding":50031},{"unit":"NO","qty":3,"rate":25001,"auction":21980,"lot_name":"Scrap of 66 KV Isolater","lot_no":2071,"buyer":"NATIONAL ENTERPRISES","mat_value":75003,"gst":13501,"tcs":1770,"tds194o":75,"service_charge_mstc":1991,"tds194h":34,"net_service_charge":1958,"gst_tds_rate":0,"gst_tds":0,"total_receivables":88241,"sd_expected":18751,"sd_received":18751,"sd_date":"13.08.2026","fp_expected":69490,"fp_received":0,"fp_date":null,"total_received":18751,"outstanding":69490},{"unit":"NO","qty":3,"rate":70001,"auction":21980,"lot_name":"Scrap of 132 KV CT","lot_no":2086,"buyer":"KASHYAP TRADING CO","mat_value":210003,"gst":37801,"tcs":4956,"tds194o":210,"service_charge_mstc":5576,"tds194h":95,"net_service_charge":5481,"gst_tds_rate":0,"gst_tds":0,"total_receivables":247069,"sd_expected":52501,"sd_received":52501,"sd_date":"17.08.2026","fp_expected":194568,"fp_received":194568,"fp_date":"17.08.2026","total_received":247069,"outstanding":0},{"unit":"NO","qty":2,"rate":15006,"auction":21980,"lot_name":"Scrap of 66 kv TBC C & R Panel","lot_no":2089,"buyer":"S M ENTERPRISES","mat_value":30012,"gst":5402,"tcs":708,"tds194o":30,"service_charge_mstc":797,"tds194h":14,"net_service_charge":783,"gst_tds_rate":0,"gst_tds":0,"total_receivables":35309,"sd_expected":7503,"sd_received":7503,"sd_date":"14.08.2026","fp_expected":27806,"fp_received":0,"fp_date":null,"total_received":7503,"outstanding":27806},{"unit":"NO","qty":3,"rate":40003,"auction":21980,"lot_name":"Scrap of 132 KV CT","lot_no":2091,"buyer":"S M ENTERPRISES","mat_value":120009,"gst":21602,"tcs":2832,"tds194o":120,"service_charge_mstc":3186,"tds194h":54,"net_service_charge":3132,"gst_tds_rate":0,"gst_tds":0,"total_receivables":141191,"sd_expected":30002,"sd_received":30002,"sd_date":"14.08.2026","fp_expected":111188,"fp_received":0,"fp_date":null,"total_received":30002,"outstanding":111189}];
+var SAMPLE_DATA = [{"unit":"KG","qty":669,"rate":1181,"auction":21980,"lot_name":"SCRAP COPPER OF T/F WINDING (Oil impregnated paper insulated T/F winding)","lot_no":1763,"buyer":"AL HAMD TRADE CORPORATION","mat_value":790089,"gst":142216,"mat_value_plus_gst":932305,"tcs":18646,"tds194o":790,"service_charge_mstc":20977,"tds194h":356,"net_service_charge":20621,"service_charge_to_mstc":21411,"gst_tds_rate":2.0,"gst_tds":15802,"total_receivables":913738,"sd_expected":197522,"sd_received":0,"sd_date":null,"fp_expected":716215,"fp_received":716216,"fp_date":"18.08.2026","short_excess_payment":197522,"total_received":716216,"outstanding":197522,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":270,"rate":580,"auction":21977,"lot_name":"Scrap of Empty oil drum","lot_no":1874,"buyer":"NATIONAL ENTERPRISES","mat_value":156600,"gst":28188,"mat_value_plus_gst":184788,"tcs":3696,"tds194o":157,"service_charge_mstc":4158,"tds194h":70,"net_service_charge":4087,"service_charge_to_mstc":4244,"gst_tds_rate":0,"gst_tds":0,"total_receivables":184240,"sd_expected":39150,"sd_received":39150,"sd_date":"13.08.2026","fp_expected":145090,"fp_received":0,"fp_date":null,"short_excess_payment":145090,"total_received":39150,"outstanding":145090,"sap_document_date":null,"doc_invoice_date":null},{"unit":"KG","qty":28,"rate":1456,"auction":21977,"lot_name":"Scrap of Copper of faulty AC compressor","lot_no":1875,"buyer":"F R KHANS ENTERPRISES","mat_value":40768,"gst":7338,"mat_value_plus_gst":48106,"tcs":962,"tds194o":41,"service_charge_mstc":1082,"tds194h":18,"net_service_charge":1064,"service_charge_to_mstc":1105,"gst_tds_rate":2.0,"gst_tds":815,"total_receivables":47149,"sd_expected":10192,"sd_received":10192,"sd_date":"11.08.2026","fp_expected":36957,"fp_received":37772,"fp_date":"20.08.2026","short_excess_payment":-815,"total_received":47964,"outstanding":-815,"sap_document_date":null,"doc_invoice_date":null},{"unit":"KG","qty":3000,"rate":66,"auction":21977,"lot_name":"Scrap of MS (extracted from equip cage and empty Sf6 gas cylinder)","lot_no":1876,"buyer":"F R KHANS ENTERPRISES","mat_value":198000,"gst":35640,"mat_value_plus_gst":233640,"tcs":4673,"tds194o":198,"service_charge_mstc":5257,"tds194h":89,"net_service_charge":5168,"service_charge_to_mstc":5366,"gst_tds_rate":2.0,"gst_tds":3960,"total_receivables":228987,"sd_expected":49500,"sd_received":49500,"sd_date":"11.08.2026","fp_expected":179487,"fp_received":183446,"fp_date":"20.08.2026","short_excess_payment":-3959,"total_received":232946,"outstanding":-3959,"sap_document_date":null,"doc_invoice_date":null},{"unit":"KG","qty":7253,"rate":227,"auction":21980,"lot_name":"SCRAP ACSR CONDUCTORS (Conductor Pieces)","lot_no":1923,"buyer":"OMKAR STEELS","mat_value":1646431,"gst":296358,"mat_value_plus_gst":1942789,"tcs":38856,"tds194o":1646,"service_charge_mstc":43713,"tds194h":741,"net_service_charge":42972,"service_charge_to_mstc":44618,"gst_tds_rate":2.0,"gst_tds":32929,"total_receivables":1904097,"sd_expected":411608,"sd_received":411608,"sd_date":"14.08.2026","fp_expected":1492489,"fp_received":0,"fp_date":null,"short_excess_payment":1492489,"total_received":411608,"outstanding":1492489,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":2787314,"auction":21977,"lot_name":"Scrap Power Transformer","lot_no":1976,"buyer":"SHAR JAHAN TRADERS","mat_value":2787314,"gst":501717,"mat_value_plus_gst":3289031,"tcs":65781,"tds194o":2787,"service_charge_mstc":74003,"tds194h":1254,"net_service_charge":72749,"service_charge_to_mstc":75536,"gst_tds_rate":0,"gst_tds":0,"total_receivables":3279275,"sd_expected":696829,"sd_received":696829,"sd_date":"13.08.2026","fp_expected":2582446,"fp_received":2582447,"fp_date":"13.08.2026","short_excess_payment":-1,"total_received":3279276,"outstanding":-1,"sap_document_date":"1800003194","doc_invoice_date":"17.08.2026","invoice_no":"DR2640100023"},{"unit":"NO","qty":4,"rate":51511,"auction":21977,"lot_name":"Scrap of 132 KV CT","lot_no":2002,"buyer":"NATIONAL ENTERPRISES","mat_value":206044,"gst":37088,"mat_value_plus_gst":243132,"tcs":4863,"tds194o":206,"service_charge_mstc":5470,"tds194h":93,"net_service_charge":5378,"service_charge_to_mstc":5584,"gst_tds_rate":0,"gst_tds":0,"total_receivables":242411,"sd_expected":51511,"sd_received":51511,"sd_date":"13.08.2026","fp_expected":190900,"fp_received":0,"fp_date":null,"short_excess_payment":190900,"total_received":51511,"outstanding":190900,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":65007,"auction":21977,"lot_name":"Scrap of 145 KV CB","lot_no":2003,"buyer":"NATIONAL ENTERPRISES","mat_value":65007,"gst":11701,"mat_value_plus_gst":76708,"tcs":1534,"tds194o":65,"service_charge_mstc":1726,"tds194h":29,"net_service_charge":1697,"service_charge_to_mstc":1762,"gst_tds_rate":0,"gst_tds":0,"total_receivables":76481,"sd_expected":16252,"sd_received":16252,"sd_date":"13.08.2026","fp_expected":60229,"fp_received":0,"fp_date":null,"short_excess_payment":60229,"total_received":16252,"outstanding":60229,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":70006,"auction":21977,"lot_name":"Scrap of 220KV CT","lot_no":2005,"buyer":"NATIONAL ENTERPRISES","mat_value":70006,"gst":12601,"mat_value_plus_gst":82607,"tcs":1652,"tds194o":70,"service_charge_mstc":1859,"tds194h":32,"net_service_charge":1827,"service_charge_to_mstc":1897,"gst_tds_rate":0,"gst_tds":0,"total_receivables":82362,"sd_expected":17502,"sd_received":17502,"sd_date":"13.08.2026","fp_expected":64861,"fp_received":0,"fp_date":null,"short_excess_payment":64860,"total_received":17502,"outstanding":64860,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":25,"rate":700,"auction":21977,"lot_name":"Scrap of empty oil drums","lot_no":2006,"buyer":"STERLING ENTERPRISES","mat_value":17500,"gst":3150,"mat_value_plus_gst":20650,"tcs":413,"tds194o":18,"service_charge_mstc":465,"tds194h":8,"net_service_charge":457,"service_charge_to_mstc":474,"gst_tds_rate":0,"gst_tds":0,"total_receivables":20589,"sd_expected":4375,"sd_received":4375,"sd_date":"11.08.2026","fp_expected":16214,"fp_received":16214,"fp_date":"11.08.2026","short_excess_payment":0,"total_received":20589,"outstanding":0,"sap_document_date":"1800003156","doc_invoice_date":"14.08.2026","invoice_no":"DR2640100018"},{"unit":"NO","qty":1,"rate":3857116,"auction":21977,"lot_name":"SCRAP POWER TRANSFORMER","lot_no":2007,"buyer":"SHAR JAHAN TRADERS","mat_value":3857116,"gst":694281,"mat_value_plus_gst":4551397,"tcs":91028,"tds194o":3857,"service_charge_mstc":102406,"tds194h":1736,"net_service_charge":100671,"service_charge_to_mstc":104528,"gst_tds_rate":0,"gst_tds":0,"total_receivables":4537897,"sd_expected":964279,"sd_received":964279,"sd_date":"13.08.2026","fp_expected":3573618,"fp_received":3573619,"fp_date":"13.08.2026","short_excess_payment":-1,"total_received":4537898,"outstanding":-1,"sap_document_date":"1800003196","doc_invoice_date":"17.08.2026","invoice_no":"DR2640100024"},{"unit":"NO","qty":250,"rate":543,"auction":21977,"lot_name":"Scrap of empty oil Druam","lot_no":2008,"buyer":"HIND TRADERS","mat_value":135750,"gst":24435,"mat_value_plus_gst":160185,"tcs":3204,"tds194o":136,"service_charge_mstc":3604,"tds194h":61,"net_service_charge":3543,"service_charge_to_mstc":3679,"gst_tds_rate":0,"gst_tds":0,"total_receivables":159710,"sd_expected":33938,"sd_received":33938,"sd_date":"14.08.2026","fp_expected":125772,"fp_received":125772,"fp_date":"18.08.2026","short_excess_payment":0,"total_received":159710,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":22,"rate":700,"auction":21977,"lot_name":"Scrap of empty oil Barrel","lot_no":2011,"buyer":"STERLING ENTERPRISES","mat_value":15400,"gst":2772,"mat_value_plus_gst":18172,"tcs":363,"tds194o":15,"service_charge_mstc":409,"tds194h":7,"net_service_charge":402,"service_charge_to_mstc":417,"gst_tds_rate":0,"gst_tds":0,"total_receivables":18118,"sd_expected":3850,"sd_received":3850,"sd_date":"11.08.2026","fp_expected":14268,"fp_received":14267,"fp_date":"11.08.2026","short_excess_payment":1,"total_received":18117,"outstanding":1,"sap_document_date":"1800003157","doc_invoice_date":"14.08.2026","invoice_no":"DR2640100019"},{"unit":"NO","qty":100,"rate":710,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2015,"buyer":"STERLING ENTERPRISES","mat_value":71000,"gst":12780,"mat_value_plus_gst":83780,"tcs":1676,"tds194o":71,"service_charge_mstc":1885,"tds194h":32,"net_service_charge":1853,"service_charge_to_mstc":1924,"gst_tds_rate":0,"gst_tds":0,"total_receivables":83532,"sd_expected":17750,"sd_received":17750,"sd_date":"11.08.2026","fp_expected":65782,"fp_received":65782,"fp_date":"11.08.2026","short_excess_payment":0,"total_received":83532,"outstanding":0,"sap_document_date":"1800003158","doc_invoice_date":"14.08.2026","invoice_no":"DR2640100020"},{"unit":"NO","qty":1,"rate":220001,"auction":21978,"lot_name":"Scrap of 220 KV Circuit Breaker","lot_no":2018,"buyer":"NATIONAL ENTERPRISES","mat_value":220001,"gst":39600,"mat_value_plus_gst":259601,"tcs":5192,"tds194o":220,"service_charge_mstc":5841,"tds194h":99,"net_service_charge":5742,"service_charge_to_mstc":5962,"gst_tds_rate":0,"gst_tds":0,"total_receivables":258831,"sd_expected":55000,"sd_received":55000,"sd_date":"13.08.2026","fp_expected":203831,"fp_received":0,"fp_date":null,"short_excess_payment":203831,"total_received":55000,"outstanding":203831,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":210001,"auction":21978,"lot_name":"Scrap of 220 KV Circuit Breaker","lot_no":2019,"buyer":"NATIONAL ENTERPRISES","mat_value":210001,"gst":37800,"mat_value_plus_gst":247801,"tcs":4956,"tds194o":210,"service_charge_mstc":5576,"tds194h":95,"net_service_charge":5481,"service_charge_to_mstc":5691,"gst_tds_rate":0,"gst_tds":0,"total_receivables":247066,"sd_expected":52500,"sd_received":52500,"sd_date":"13.08.2026","fp_expected":194566,"fp_received":0,"fp_date":null,"short_excess_payment":194566,"total_received":52500,"outstanding":194566,"sap_document_date":null,"doc_invoice_date":null},{"unit":"KG","qty":3500,"rate":333,"auction":21978,"lot_name":"SCRAP 80MM² AAAC EARTHWIRE","lot_no":2020,"buyer":"OMKAR STEELS","mat_value":1165500,"gst":209790,"mat_value_plus_gst":1375290,"tcs":27506,"tds194o":1166,"service_charge_mstc":30944,"tds194h":524,"net_service_charge":30420,"service_charge_to_mstc":31585,"gst_tds_rate":2.0,"gst_tds":23310,"total_receivables":1347901,"sd_expected":291375,"sd_received":291375,"sd_date":"10.08.2026","fp_expected":1056526,"fp_received":1056525,"fp_date":"10.08.2026","short_excess_payment":1,"total_received":1347900,"outstanding":1,"sap_document_date":"1800003065","doc_invoice_date":"12.08.2026","invoice_no":"DR2640100017"},{"unit":"NO","qty":3,"rate":110200,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2022,"buyer":"NATIONAL SCRAP AND BUILDING MATERIAL SUPPLIER","mat_value":330600,"gst":59508,"mat_value_plus_gst":390108,"tcs":7802,"tds194o":331,"service_charge_mstc":8777,"tds194h":149,"net_service_charge":8629,"service_charge_to_mstc":8959,"gst_tds_rate":0,"gst_tds":0,"total_receivables":388951,"sd_expected":82650,"sd_received":82650,"sd_date":"14.08.2026","fp_expected":306301,"fp_received":306301,"fp_date":"21.08.2026","short_excess_payment":0,"total_received":388951,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":3,"rate":83743,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2023,"buyer":"NATIONAL ENTERPRISES","mat_value":251229,"gst":45221,"mat_value_plus_gst":296450,"tcs":5929,"tds194o":251,"service_charge_mstc":6670,"tds194h":113,"net_service_charge":6557,"service_charge_to_mstc":6808,"gst_tds_rate":0,"gst_tds":0,"total_receivables":295571,"sd_expected":62807,"sd_received":62807,"sd_date":"13.08.2026","fp_expected":232764,"fp_received":0,"fp_date":null,"short_excess_payment":232764,"total_received":62807,"outstanding":232764,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":90,"rate":700,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2025,"buyer":"STERLING ENTERPRISES","mat_value":63000,"gst":11340,"mat_value_plus_gst":74340,"tcs":1487,"tds194o":63,"service_charge_mstc":1673,"tds194h":28,"net_service_charge":1644,"service_charge_to_mstc":1707,"gst_tds_rate":0,"gst_tds":0,"total_receivables":74120,"sd_expected":15750,"sd_received":15750,"sd_date":"11.08.2026","fp_expected":58370,"fp_received":58418,"fp_date":"11.08.2026","short_excess_payment":-48,"total_received":74168,"outstanding":-48,"sap_document_date":"1800003160","doc_invoice_date":"14.08.2026","invoice_no":"DR2640100021"},{"unit":"NO","qty":1,"rate":50003,"auction":21978,"lot_name":"Scrap of 132 KV CT","lot_no":2027,"buyer":"NATIONAL ENTERPRISES","mat_value":50003,"gst":9001,"mat_value_plus_gst":59004,"tcs":1180,"tds194o":50,"service_charge_mstc":1328,"tds194h":23,"net_service_charge":1305,"service_charge_to_mstc":1355,"gst_tds_rate":0,"gst_tds":0,"total_receivables":58829,"sd_expected":12501,"sd_received":12501,"sd_date":"13.08.2026","fp_expected":46328,"fp_received":0,"fp_date":null,"short_excess_payment":46328,"total_received":12501,"outstanding":46328,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1000,"rate":517,"auction":21978,"lot_name":"Scrap Empty Oil Drum/ Barrel","lot_no":2033,"buyer":"WATAN SCRAP TRADERS","mat_value":517000,"gst":93060,"mat_value_plus_gst":610060,"tcs":12201,"tds194o":517,"service_charge_mstc":13726,"tds194h":233,"net_service_charge":13494,"service_charge_to_mstc":14011,"gst_tds_rate":0,"gst_tds":0,"total_receivables":608251,"sd_expected":129250,"sd_received":129250,"sd_date":"14.08.2026","fp_expected":479001,"fp_received":479001,"fp_date":"21.08.2026","short_excess_payment":0,"total_received":608251,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":2,"rate":14001,"auction":21978,"lot_name":"Scrap of 132 KV Wave Trap","lot_no":2035,"buyer":"NATIONAL ENTERPRISES","mat_value":28002,"gst":5040,"mat_value_plus_gst":33042,"tcs":661,"tds194o":28,"service_charge_mstc":743,"tds194h":13,"net_service_charge":731,"service_charge_to_mstc":759,"gst_tds_rate":0,"gst_tds":0,"total_receivables":32944,"sd_expected":7001,"sd_received":7001,"sd_date":"13.08.2026","fp_expected":25944,"fp_received":0,"fp_date":null,"short_excess_payment":25943,"total_received":7001,"outstanding":25943,"sap_document_date":null,"doc_invoice_date":null},{"unit":"MT","qty":8.2,"rate":67000,"auction":21978,"lot_name":"Mix Scrap (Tower angles & 0.2 ACSR Condutor pieces)","lot_no":2036,"buyer":"M I SCRAP TRADERS","mat_value":549400,"gst":98892,"mat_value_plus_gst":648292,"tcs":12966,"tds194o":549,"service_charge_mstc":14587,"tds194h":247,"net_service_charge":14339,"service_charge_to_mstc":14889,"gst_tds_rate":2.0,"gst_tds":10988,"total_receivables":635381,"sd_expected":137350,"sd_received":137350,"sd_date":"14.08.2026","fp_expected":498031,"fp_received":0,"fp_date":null,"short_excess_payment":498031,"total_received":137350,"outstanding":498031,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":50,"rate":531,"auction":21978,"lot_name":"Scrap of empty oil Barrels","lot_no":2037,"buyer":"WATAN SCRAP TRADERS","mat_value":26550,"gst":4779,"mat_value_plus_gst":31329,"tcs":627,"tds194o":27,"service_charge_mstc":705,"tds194h":12,"net_service_charge":693,"service_charge_to_mstc":720,"gst_tds_rate":0,"gst_tds":0,"total_receivables":31236,"sd_expected":6638,"sd_received":6638,"sd_date":"14.08.2026","fp_expected":24599,"fp_received":24598,"fp_date":"21.08.2026","short_excess_payment":0,"total_received":31236,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":3,"rate":90002,"auction":21978,"lot_name":"Scrap of 33 KV CT","lot_no":2040,"buyer":"STERLING ENTERPRISES","mat_value":270006,"gst":48601,"mat_value_plus_gst":318607,"tcs":6372,"tds194o":270,"service_charge_mstc":7169,"tds194h":122,"net_service_charge":7047,"service_charge_to_mstc":7317,"gst_tds_rate":0,"gst_tds":0,"total_receivables":317662,"sd_expected":67502,"sd_received":67502,"sd_date":"11.08.2026","fp_expected":250161,"fp_received":0,"fp_date":null,"short_excess_payment":250160,"total_received":67502,"outstanding":250160,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":5,"rate":80000,"auction":21979,"lot_name":"Scrap of 132 KV CT","lot_no":2043,"buyer":"NATIONAL ENTERPRISES","mat_value":400000,"gst":72000,"mat_value_plus_gst":472000,"tcs":9440,"tds194o":400,"service_charge_mstc":10620,"tds194h":180,"net_service_charge":10440,"service_charge_to_mstc":10840,"gst_tds_rate":0,"gst_tds":0,"total_receivables":470600,"sd_expected":100000,"sd_received":100000,"sd_date":"13.08.2026","fp_expected":370600,"fp_received":0,"fp_date":null,"short_excess_payment":370600,"total_received":100000,"outstanding":370600,"sap_document_date":null,"doc_invoice_date":null},{"unit":"KG","qty":670,"rate":309,"auction":21979,"lot_name":"Scrap of AAAC Earth wire","lot_no":2046,"buyer":"SAHARA ENTERPRISES","mat_value":207030,"gst":37265,"mat_value_plus_gst":244295,"tcs":4886,"tds194o":207,"service_charge_mstc":5497,"tds194h":93,"net_service_charge":5403,"service_charge_to_mstc":5611,"gst_tds_rate":2.0,"gst_tds":4141,"total_receivables":239430,"sd_expected":51758,"sd_received":51758,"sd_date":"11.08.2026","fp_expected":187672,"fp_received":191812,"fp_date":"21.08.2026","short_excess_payment":-4140,"total_received":243570,"outstanding":-4140,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":2,"rate":80006,"auction":21979,"lot_name":"Scrap of 220 KV CT","lot_no":2055,"buyer":"NATIONAL ENTERPRISES","mat_value":160012,"gst":28802,"mat_value_plus_gst":188814,"tcs":3776,"tds194o":160,"service_charge_mstc":4248,"tds194h":72,"net_service_charge":4176,"service_charge_to_mstc":4336,"gst_tds_rate":0,"gst_tds":0,"total_receivables":188254,"sd_expected":40003,"sd_received":40003,"sd_date":"13.08.2026","fp_expected":148251,"fp_received":0,"fp_date":null,"short_excess_payment":148251,"total_received":40003,"outstanding":148251,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":29502,"auction":21979,"lot_name":"Scrap of 33 KV GCB","lot_no":2059,"buyer":"NATIONAL ENTERPRISES","mat_value":29502,"gst":5310,"mat_value_plus_gst":34812,"tcs":696,"tds194o":30,"service_charge_mstc":783,"tds194h":13,"net_service_charge":770,"service_charge_to_mstc":800,"gst_tds_rate":0,"gst_tds":0,"total_receivables":34709,"sd_expected":7376,"sd_received":7376,"sd_date":"13.08.2026","fp_expected":27334,"fp_received":0,"fp_date":null,"short_excess_payment":27333,"total_received":7376,"outstanding":27333,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":30,"rate":702,"auction":21979,"lot_name":"Scrap of Empty oil Barrels","lot_no":2062,"buyer":"STERLING ENTERPRISES","mat_value":21060,"gst":3791,"mat_value_plus_gst":24851,"tcs":497,"tds194o":21,"service_charge_mstc":559,"tds194h":9,"net_service_charge":550,"service_charge_to_mstc":571,"gst_tds_rate":0,"gst_tds":0,"total_receivables":24777,"sd_expected":5265,"sd_received":5265,"sd_date":"11.08.2026","fp_expected":19512,"fp_received":19512,"fp_date":"11.08.2026","short_excess_payment":0,"total_received":24777,"outstanding":0,"sap_document_date":"1800003161","doc_invoice_date":"14.08.2026","invoice_no":"DR2640100022"},{"unit":"NO","qty":150,"rate":571,"auction":21980,"lot_name":"Scrap of empty oil drums","lot_no":2067,"buyer":"WATAN SCRAP TRADERS","mat_value":85650,"gst":15417,"mat_value_plus_gst":101067,"tcs":2021,"tds194o":86,"service_charge_mstc":2274,"tds194h":39,"net_service_charge":2235,"service_charge_to_mstc":2321,"gst_tds_rate":0,"gst_tds":0,"total_receivables":100767,"sd_expected":21413,"sd_received":21413,"sd_date":"14.08.2026","fp_expected":79355,"fp_received":79354,"fp_date":"20.08.2026","short_excess_payment":0,"total_received":100767,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":1,"rate":54000,"auction":21980,"lot_name":"Scrap of 33 KV CB","lot_no":2069,"buyer":"STERLING ENTERPRISES","mat_value":54000,"gst":9720,"mat_value_plus_gst":63720,"tcs":1274,"tds194o":54,"service_charge_mstc":1434,"tds194h":24,"net_service_charge":1409,"service_charge_to_mstc":1463,"gst_tds_rate":0,"gst_tds":0,"total_receivables":63531,"sd_expected":13500,"sd_received":13500,"sd_date":"11.08.2026","fp_expected":50031,"fp_received":0,"fp_date":null,"short_excess_payment":50031,"total_received":13500,"outstanding":50031,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":3,"rate":25001,"auction":21980,"lot_name":"Scrap of 66 KV Isolater","lot_no":2071,"buyer":"NATIONAL ENTERPRISES","mat_value":75003,"gst":13501,"mat_value_plus_gst":88504,"tcs":1770,"tds194o":75,"service_charge_mstc":1991,"tds194h":34,"net_service_charge":1958,"service_charge_to_mstc":2033,"gst_tds_rate":0,"gst_tds":0,"total_receivables":88241,"sd_expected":18751,"sd_received":18751,"sd_date":"13.08.2026","fp_expected":69490,"fp_received":0,"fp_date":null,"short_excess_payment":69490,"total_received":18751,"outstanding":69490,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":3,"rate":70001,"auction":21980,"lot_name":"Scrap of 132 KV CT","lot_no":2086,"buyer":"KASHYAP TRADING CO","mat_value":210003,"gst":37801,"mat_value_plus_gst":247804,"tcs":4956,"tds194o":210,"service_charge_mstc":5576,"tds194h":95,"net_service_charge":5481,"service_charge_to_mstc":5691,"gst_tds_rate":0,"gst_tds":0,"total_receivables":247069,"sd_expected":52501,"sd_received":52501,"sd_date":"17.08.2026","fp_expected":194568,"fp_received":194568,"fp_date":"17.08.2026","short_excess_payment":0,"total_received":247069,"outstanding":0,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":2,"rate":15006,"auction":21980,"lot_name":"Scrap of 66 kv TBC C & R Panel","lot_no":2089,"buyer":"S M ENTERPRISES","mat_value":30012,"gst":5402,"mat_value_plus_gst":35414,"tcs":708,"tds194o":30,"service_charge_mstc":797,"tds194h":14,"net_service_charge":783,"service_charge_to_mstc":813,"gst_tds_rate":0,"gst_tds":0,"total_receivables":35309,"sd_expected":7503,"sd_received":7503,"sd_date":"14.08.2026","fp_expected":27806,"fp_received":0,"fp_date":null,"short_excess_payment":27806,"total_received":7503,"outstanding":27806,"sap_document_date":null,"doc_invoice_date":null},{"unit":"NO","qty":3,"rate":40003,"auction":21980,"lot_name":"Scrap of 132 KV CT","lot_no":2091,"buyer":"S M ENTERPRISES","mat_value":120009,"gst":21602,"mat_value_plus_gst":141611,"tcs":2832,"tds194o":120,"service_charge_mstc":3186,"tds194h":54,"net_service_charge":3132,"service_charge_to_mstc":3252,"gst_tds_rate":0,"gst_tds":0,"total_receivables":141191,"sd_expected":30002,"sd_received":30002,"sd_date":"14.08.2026","fp_expected":111188,"fp_received":0,"fp_date":null,"short_excess_payment":111189,"total_received":30002,"outstanding":111189,"sap_document_date":null,"doc_invoice_date":null}];
 
 /* ---------------- state ---------------- */
-/* Bumped for the 2026-08-22 workbook refresh so existing browsers load the new seed data. */
-var LS_KEY = 'scrapsale_pro_v5';
+/* Bumped for the workbook refresh and Excel-order columns so existing browsers load the new layout/data. */
+var LS_KEY = 'scrapsale_pro_v6';
 var storage = (function () {
   try {
     var t = '__t' + Date.now();
@@ -2298,7 +2339,8 @@ var customCols = []; /* [{id, name, type: 'text'|'number'|'date'}] */
 var gdriveClientId = '';
 var gdriveToken = null;
 var pendingImportCustom = [];
-var DEFAULT_DETAIL_KEYS = ['lot_no','invoice_no','buyer','auction','lot_name','unit','qty','rate','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds_rate','gst_tds','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','total_received','outstanding'];
+/* Detail columns follow Final Calculation Sheet order, then app-only receipt totals/actions. */
+var DEFAULT_DETAIL_KEYS = ['qty','lot_name','rate','auction','unit','lot_no','buyer','mat_value','gst','mat_value_plus_gst','tcs','tds194o','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','gst_tds_rate','gst_tds','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','short_excess_payment','invoice_no','sap_document_date','doc_invoice_date','total_received','outstanding','invoice_link'];
 var DEFAULT_PIVOT_LOT_KEYS = ['lot_no','invoice_no','buyer','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','outstanding'];
 var DEFAULT_PIVOT_METRIC_KEYS = ['lots','mat_value','gst','tcs','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
 var colLayout = {
@@ -2667,33 +2709,38 @@ var DEFAULT_GROUP_COLS = [
   ['outstanding', 'Outstanding', '', true]
 ];
 var FIELD_META = {
-  lot_no: { label: 'Lot No', kind: 'left', sum: false },
-  invoice_no: { label: 'Invoice No', kind: 'left', sum: false },
-  invoice_link: { label: 'Invoice link', kind: 'left', sum: false },
-  buyer: { label: 'Buyer', kind: 'left', sum: false },
-  auction: { label: 'Auction', kind: '', sum: false },
-  lot_name: { label: 'Material', kind: 'left', sum: false },
-  unit: { label: 'Unit', kind: '', sum: false },
-  qty: { label: 'Qty', kind: '', sum: true },
+  qty: { label: 'Quantity', kind: '', sum: true },
+  lot_name: { label: 'Lot Name', kind: 'left', sum: false },
   rate: { label: 'Rate', kind: '', sum: false },
-  mat_value: { label: 'Material Value', kind: '', sum: true },
+  auction: { label: 'Bid Sheet', kind: '', sum: false },
+  unit: { label: 'Unit', kind: '', sum: false },
+  lot_no: { label: 'Lot No.', kind: 'left', sum: false },
+  buyer: { label: 'Buyer', kind: 'left', sum: false },
+  mat_value: { label: 'Mat. Value', kind: '', sum: true },
   gst: { label: 'GST', kind: '', sum: true },
+  mat_value_plus_gst: { label: 'Mat. Value + GST', kind: '', sum: true },
   tcs: { label: 'TCS', kind: '', sum: true },
-  service_charge_mstc: { label: 'MSTC SC', kind: '', sum: true },
-  tds194h: { label: 'TDS 194H', kind: '', sum: true },
-  net_service_charge: { label: 'Net SC', kind: '', sum: true },
-  tds194o: { label: 'TDS 194O', kind: '', sum: true },
-  gst_tds_rate: { label: 'GST TDS Rate % ✎', kind: 'edit', sum: false, edit: true },
-  gst_tds: { label: 'GST TDS ✎', kind: 'edit', sum: true, edit: true },
+  tds194o: { label: 'TDS u/s 194(O)', kind: '', sum: true },
+  service_charge_mstc: { label: 'Service Charge to MSTC', kind: '', sum: true },
+  tds194h: { label: 'TDS u/s 194(H)', kind: '', sum: true },
+  net_service_charge: { label: 'Net Service Charge (post TDS 194H)', kind: '', sum: true },
+  service_charge_to_mstc: { label: 'Service charge to MSTC', kind: '', sum: true },
+  gst_tds_rate: { label: 'GST TDS Rate', kind: 'edit', sum: false, edit: true },
+  gst_tds: { label: 'GST TDS', kind: 'edit', sum: true, edit: true },
   total_receivables: { label: 'Total Receivables in Cash', kind: 'strong', sum: true },
-  sd_expected: { label: 'SD Expected ✎', kind: 'edit', sum: true, edit: true },
-  sd_received: { label: 'SD Received ✎', kind: 'edit', sum: true, edit: true },
-  sd_date: { label: 'SD Date ✎', kind: 'date-edit', sum: false, edit: true },
-  fp_expected: { label: 'FP Expected ✎', kind: 'edit', sum: true, edit: true },
-  fp_received: { label: 'FP Received ✎', kind: 'edit', sum: true, edit: true },
-  fp_date: { label: 'FP Date ✎', kind: 'date-edit', sum: false, edit: true },
+  sd_expected: { label: 'Security Deposit (Expected)', kind: 'edit', sum: true, edit: true },
+  sd_received: { label: 'Security Deposit (Received)', kind: 'edit', sum: true, edit: true },
+  sd_date: { label: 'SD Date', kind: 'date-edit', sum: false, edit: true },
+  fp_expected: { label: 'Final Payment (Expected)', kind: 'edit', sum: true, edit: true },
+  fp_received: { label: 'Final Payment (Received)', kind: 'edit', sum: true, edit: true },
+  fp_date: { label: 'FP Date', kind: 'date-edit', sum: false, edit: true },
+  short_excess_payment: { label: 'Short/(Excess) Payment', kind: '', sum: true },
+  invoice_no: { label: 'Invoice No.', kind: 'left', sum: false },
+  sap_document_date: { label: 'SAP Document Date', kind: 'left', sum: false },
+  doc_invoice_date: { label: 'Doc./Invoice Date', kind: 'date', sum: false },
   total_received: { label: 'Total Received', kind: 'strong', sum: true },
   outstanding: { label: 'Outstanding', kind: '', sum: true },
+  invoice_link: { label: 'Invoice link', kind: 'left', sum: false },
   lots: { label: 'Lots', kind: '', sum: true }
 };
 function customColById(id) {
@@ -2956,30 +3003,35 @@ function renderPivot() {
 }
 
 var DETAIL_COLS = [
-  ['lot_no', 'Lot No', 'left'],
-  ['invoice_no', 'Invoice No', 'left'],
-  ['buyer', 'Buyer', 'left'],
-  ['auction', 'Auction', ''],
-  ['lot_name', 'Material', 'left'],
-  ['unit', 'Unit', ''],
-  ['qty', 'Qty', ''],
+  ['qty', 'Quantity', ''],
+  ['lot_name', 'Lot Name', 'left'],
   ['rate', 'Rate', ''],
-  ['mat_value', 'Material Value', ''],
+  ['auction', 'Bid Sheet', ''],
+  ['unit', 'Unit', ''],
+  ['lot_no', 'Lot No.', 'left'],
+  ['buyer', 'Buyer', 'left'],
+  ['mat_value', 'Mat. Value', ''],
   ['gst', 'GST', ''],
+  ['mat_value_plus_gst', 'Mat. Value + GST', ''],
   ['tcs', 'TCS', ''],
-  ['service_charge_mstc', 'MSTC SC', ''],
-  ['tds194h', 'TDS 194H', ''],
-  ['net_service_charge', 'Net SC', ''],
-  ['tds194o', 'TDS 194O', ''],
-  ['gst_tds_rate', 'GST TDS Rate % ✎', 'edit'],
-  ['gst_tds', 'GST TDS ✎', 'edit'],
+  ['tds194o', 'TDS u/s 194(O)', ''],
+  ['service_charge_mstc', 'Service Charge to MSTC', ''],
+  ['tds194h', 'TDS u/s 194(H)', ''],
+  ['net_service_charge', 'Net Service Charge (post TDS 194H)', ''],
+  ['service_charge_to_mstc', 'Service charge to MSTC', ''],
+  ['gst_tds_rate', 'GST TDS Rate', 'edit'],
+  ['gst_tds', 'GST TDS', 'edit'],
   ['total_receivables', 'Total Receivables in Cash', 'strong'],
-  ['sd_expected', 'SD Expected ✎', 'edit'],
-  ['sd_received', 'SD Received ✎', 'edit'],
-  ['sd_date', 'SD Date ✎', 'date-edit'],
-  ['fp_expected', 'FP Expected ✎', 'edit'],
-  ['fp_received', 'FP Received ✎', 'edit'],
-  ['fp_date', 'FP Date ✎', 'date-edit'],
+  ['sd_expected', 'Security Deposit (Expected)', 'edit'],
+  ['sd_received', 'Security Deposit (Received)', 'edit'],
+  ['sd_date', 'SD Date', 'date-edit'],
+  ['fp_expected', 'Final Payment (Expected)', 'edit'],
+  ['fp_received', 'Final Payment (Received)', 'edit'],
+  ['fp_date', 'FP Date', 'date-edit'],
+  ['short_excess_payment', 'Short/(Excess) Payment', ''],
+  ['invoice_no', 'Invoice No.', 'left'],
+  ['sap_document_date', 'SAP Document Date', 'left'],
+  ['doc_invoice_date', 'Doc./Invoice Date', 'date'],
   ['total_received', 'Total Received', 'strong'],
   ['outstanding', 'Outstanding', '']
 ];
@@ -3030,7 +3082,7 @@ function renderDetailInto(tableId, countId) {
       return '<td class="' + cellClassFor(f, v) + '" data-field="' + escHtml(f) + '">' + formatCellValue(r, f) + '</td>';
     }).join('') + '<td class="row-actions"><button type="button" class="rowedit" data-lot="' + li + '" title="Edit entire row">✎</button><button type="button" class="rowdel" data-lot="' + li + '" title="Delete lot">✕</button></td></tr>';
   }).join('');
-  var numericFields = ['qty','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
+  var numericFields = ['qty','mat_value','mat_value_plus_gst','gst','tcs','tds194o','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','short_excess_payment','total_received','outstanding'];
   var tfoot = table.querySelector('tfoot');
   tfoot.innerHTML = '<tr>' + cols.map(function (f, i) {
     if (i === 0) return '<td class="left">Total (' + rows.length + ')</td>';
@@ -3260,7 +3312,7 @@ function gridHandlePointer(e, isMove) {
 function renderDetailFooter() {
   var rows = detailRows;
   var cols = detailColKeys();
-  var numericFields = ['qty','mat_value','gst','tcs','service_charge_mstc','tds194h','net_service_charge','tds194o','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
+  var numericFields = ['qty','mat_value','mat_value_plus_gst','gst','tcs','tds194o','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','gst_tds','total_receivables','sd_expected','sd_received','fp_expected','fp_received','short_excess_payment','total_received','outstanding'];
   function fill(tableId) {
     var table = document.getElementById(tableId);
     if (!table) return;
