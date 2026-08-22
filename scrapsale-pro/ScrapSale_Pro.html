@@ -470,6 +470,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
               </div>
             </div>
           </h2>
+          <div id="pivotQuickToggles" class="controls" style="margin:8px 0 14px;gap:6px;flex-wrap:wrap" aria-label="Pivot Analytics column visibility"></div>
           <div class="controls" style="margin-bottom:14px">
             <div>
               <label>Group by</label>
@@ -524,13 +525,16 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
             <div class="spacer"></div>
             <input type="text" id="detailSearch" placeholder="Search this table..." style="min-width:170px"/>
             <div class="dropdown">
-              <button class="btn" id="lotsColsBtn" type="button">Columns ▾</button>
+              <button class="btn" id="lotsColsBtn" type="button">Column visibility ▾</button>
+              <button class="btn" id="selectDetailColsBtn" type="button">Select columns</button>
+              <button class="btn" id="deselectDetailColsBtn" type="button">Deselect columns</button>
               <div class="col-picker-panel" id="lotsColPicker"></div>
             </div>
             <button class="btn" id="addColBtnLots" type="button">+ Add column</button>
             <button class="btn" id="clearDetail">Clear filters</button>
             <button class="btn primary" id="addLotBtn">+ Add row</button>
           </h2>
+          <div id="lotQuickToggles" class="controls" style="margin:8px 0;gap:6px;flex-wrap:wrap"></div>
           <p class="hint">
             Editable: <b>GST TDS Rate · GST TDS · SD Expected · SD Received · SD Date · FP Expected · FP Received · FP Date</b> — GST is display-only.
             everything else recalculates live: Total Receivables in Cash = Material Value + GST + TCS − Net Service Charge − TDS 194O − GST TDS,
@@ -2346,7 +2350,8 @@ var gdriveToken = null;
 var pendingImportCustom = [];
 /* Detail columns follow Final Calculation Sheet order, then app-only receipt totals/actions. */
 var DEFAULT_DETAIL_KEYS = ['qty','lot_name','rate','auction','unit','lot_no','buyer','mat_value','gst','mat_value_plus_gst','tcs','tds194o','service_charge_mstc','tds194h','net_service_charge','service_charge_to_mstc','gst_tds_rate','gst_tds','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','short_excess_payment','invoice_no','sap_document_date','doc_invoice_date','total_received','outstanding','invoice_link'];
-var DEFAULT_PIVOT_LOT_KEYS = ['lot_no','invoice_no','buyer','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','outstanding'];
+/* Invoice No. is intentionally available only in Lot Details, not Pivot Analytics. */
+var DEFAULT_PIVOT_LOT_KEYS = ['lot_no','buyer','total_receivables','sd_expected','sd_received','sd_date','fp_expected','fp_received','fp_date','outstanding'];
 var DEFAULT_PIVOT_METRIC_KEYS = ['lots','mat_value','gst','tcs','total_receivables','sd_expected','sd_received','fp_expected','fp_received','total_received','outstanding'];
 var colLayout = {
   detail: DEFAULT_DETAIL_KEYS.slice(),
@@ -2365,9 +2370,9 @@ function ensureGstTdsRateColumn() {
     if (li >= 0) colLayout.detail.splice(li + 1, 0, 'invoice_no');
     else colLayout.detail.unshift('invoice_no');
   }
-  if (colLayout.pivotLot && colLayout.pivotLot.indexOf('invoice_no') === -1) {
-    var pi = colLayout.pivotLot.indexOf('lot_no');
-    if (pi >= 0) colLayout.pivotLot.splice(pi + 1, 0, 'invoice_no');
+  /* Invoice No. must remain available in Lot Details, but never appear in Pivot Analytics. */
+  if (colLayout.pivotLot) {
+    colLayout.pivotLot = colLayout.pivotLot.filter(function (key) { return key !== 'invoice_no'; });
   }
 }
 
@@ -2559,7 +2564,7 @@ function loadState() {
       return normalizeLot(o);
     });
     if (data.ui) {
-      ui.groupBy = data.ui.groupBy || 'default';
+      ui.groupBy = data.ui.groupBy || 'buyer';
       ui.auction = data.ui.auction || 'all';
       ui.dashSearch = data.ui.dashSearch || '';
       ui.detailSearch = data.ui.detailSearch || '';
@@ -2798,7 +2803,9 @@ function allAssignableFields(which) {
     DEFAULT_DETAIL_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
     customCols.forEach(function (c) { out.push({ key: c.id, label: c.name + ' (custom)' }); });
   } else if (which === 'pivotLot') {
-    DEFAULT_DETAIL_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
+    DEFAULT_DETAIL_KEYS.forEach(function (k) {
+      if (k !== 'invoice_no') out.push({ key: k, label: fieldLabel(k) });
+    });
     customCols.forEach(function (c) { out.push({ key: c.id, label: c.name + ' (custom)' }); });
   } else {
     DEFAULT_PIVOT_METRIC_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
@@ -3702,6 +3709,7 @@ function renderColPicker(panelId, layoutKind) {
       (hidden ? '<div class="cm-title">Hidden — tick to show</div>' + hidden : '') +
     '</div>' +
     '<div class="col-picker-foot">' +
+      (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="selectall">Select all</button><button type="button" class="btn" data-act="deselectall">Deselect all</button>' : '') +
       '<button type="button" class="btn" data-act="reset">Reset</button>' +
       (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="unfreeze">' + (ui.freezeDetailField ? 'Unfreeze columns' : 'Freeze: use ⊣ on a header') + '</button>' : '') +
       (layoutKind === 'detail' ? '<button type="button" class="btn primary" data-act="addcol">+ Add column</button>' : '') +
@@ -3711,6 +3719,12 @@ function renderColPicker(panelId, layoutKind) {
       e.stopPropagation();
       var act = b.getAttribute('data-act');
       if (act === 'close') { panel.classList.remove('open'); return; }
+      if (act === 'selectall' || act === 'deselectall') {
+        pushHistory();
+        var allKeys = catalog.map(function (c) { return c.key; });
+        colLayout[layoutKind] = act === 'selectall' ? allKeys : (allKeys.length ? [allKeys[0]] : []);
+        saveState(); renderAll(); renderColPicker(panelId, layoutKind); return;
+      }
       if (act === 'reset') {
         pushHistory();
         if (layoutKind === 'detail') colLayout.detail = DEFAULT_DETAIL_KEYS.slice();
@@ -3761,6 +3775,12 @@ function renderColPicker(panelId, layoutKind) {
       }
     });
   });
+}
+function setAllDetailColumns(showAll) {
+  var catalog = allAssignableFields('detail');
+  pushHistory();
+  colLayout.detail = showAll ? catalog.map(function (c) { return c.key; }) : [catalog[0].key];
+  saveState(); renderAll();
 }
 function toggleColPicker(panelId, layoutKind, btn) {
   var panel = document.getElementById(panelId);
@@ -4355,8 +4375,42 @@ function buildStaticUI() {
     b.addEventListener('click', function () { doExport(b.dataset.fmt); });
   });
 }
+function renderQuickColumnToggles(boxId, layoutKind, label) {
+  var box = document.getElementById(boxId);
+  if (!box) return;
+  var catalog = allAssignableFields(layoutKind);
+  var layout = colLayout[layoutKind];
+  box.innerHTML = '<span class="muted" style="font-size:12px;padding:7px 2px">' + escHtml(label) + ' — show/hide:</span>' + catalog.map(function (c) {
+    var on = layout.indexOf(c.key) !== -1;
+    var action = on ? 'Hide ' : 'Show ';
+    return '<button type="button" class="btn ' + (on ? 'primary' : '') + '" data-quick-col="' + escHtml(c.key) + '" aria-pressed="' + on + '" title="' + escHtml(action + c.label) + '">' + escHtml(c.label) + '</button>';
+  }).join('');
+  box.querySelectorAll('[data-quick-col]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-quick-col');
+      var i = layout.indexOf(key);
+      if (i >= 0 && layout.length <= 1) {
+        showToast('Keep at least one column.', 'error');
+        return;
+      }
+      pushHistory();
+      if (i >= 0) layout.splice(i, 1);
+      else layout.push(key);
+      saveState(); renderAll();
+    });
+  });
+}
+function renderPivotQuickToggles() {
+  var layoutKind = ui.groupBy === 'default' ? 'pivotLot' : 'pivotMetric';
+  renderQuickColumnToggles('pivotQuickToggles', layoutKind, 'Pivot columns');
+}
+function renderLotQuickToggles() {
+  renderQuickColumnToggles('lotQuickToggles', 'detail', 'Lot detail columns');
+}
 function renderAll() {
   renderCards();
+  renderPivotQuickToggles();
+  renderLotQuickToggles();
   renderPivot();
   renderDetail();
   updateUndoRedoUI();
@@ -4370,6 +4424,8 @@ function init() {
   var loaded = loadState();
   if (!loaded) lots = SAMPLE_DATA.map(normalizeLot);
   ensureGstTdsRateColumn();
+  /* Buyer is the product default; replace older saved default grouping. */
+  if (!loaded || ui.groupBy === 'default') ui.groupBy = 'buyer';
   buildStaticUI();
   document.getElementById('groupBy').value = ui.groupBy || 'default';
   document.getElementById('auctionFilter').value = ui.auction || 'all';
@@ -4406,6 +4462,8 @@ function init() {
   document.getElementById('dashColsBtn').addEventListener('click', function (e) {
     e.stopPropagation(); toggleColPicker('dashColPicker', 'detail', e.currentTarget);
   });
+  document.getElementById('selectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(true); });
+  document.getElementById('deselectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(false); });
   document.getElementById('lotsColsBtn').addEventListener('click', function (e) {
     e.stopPropagation(); toggleColPicker('lotsColPicker', 'detail', e.currentTarget);
   });
