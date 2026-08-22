@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local working copies / exports (keep data/sample-lots.json)
+*.xlsx
+!data/*.xlsx
+*.xls
+*.pdf
+/tmp/
+*.bak
+
+# Browser leftovers
+localStorage.json
