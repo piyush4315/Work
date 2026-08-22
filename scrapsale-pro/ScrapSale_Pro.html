@@ -106,7 +106,12 @@ input[type=text], input[type=search] { min-width: 190px; }
 input:focus { outline: none; border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
 .spacer { flex: 1; }
 /* ---------- tables ---------- */
-.table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 11px; max-height: 660px; }
+.table-wrap {
+  /* Keep horizontal scrolling for the wide Excel-style grid, but let the page
+     carry vertical scrolling instead of showing a second vertical scrollbar. */
+  overflow-x: auto; overflow-y: hidden; border: 1px solid var(--line); border-radius: 11px;
+  max-height: none;
+}
 table { border-collapse: collapse; width: 100%; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 table.lots-table { border-collapse: separate; border-spacing: 0; }
 thead th {
