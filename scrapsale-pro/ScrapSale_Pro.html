@@ -490,7 +490,6 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
               </div>
             </div>
           </h2>
-          <div class="col-toggles" id="pivotColToggles"></div>
           <div class="controls" style="margin-bottom:14px">
             <div>
               <label>Group by</label>
@@ -512,7 +511,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
           <div class="table-wrap">
             <table id="pivotTable"><thead></thead><tbody></tbody><tfoot></tfoot></table>
           </div>
-          <p class="hint" id="pivotHint">Click a row to drill into its lots below. Click a column header to sort. Use the on/off switches above to show or hide each column, or Columns to choose what appears in each place.</p>
+          <p class="hint" id="pivotHint">Click a row to drill into its lots below. Click a column header to sort. Use Columns to choose what appears in each place.</p>
         </div>
         <div class="panel" id="dashDetailPanel">
           <div class="detail-header">
@@ -4444,7 +4443,6 @@ function renderAll() {
   renderLotQuickToggles();
   renderPivot();
   renderDetail();
-  renderColToggles('pivotColToggles', ui.groupBy === 'default' ? 'pivotLot' : 'pivotMetric');
   renderColToggles('dashColToggles', 'detail');
   updateUndoRedoUI();
   var ws = document.getElementById('wsStats');
