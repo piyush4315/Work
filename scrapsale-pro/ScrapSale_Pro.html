@@ -533,6 +533,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
             <button class="btn" id="clearDetail">Clear filters</button>
             <button class="btn primary" id="addLotBtn">+ Add row</button>
           </h2>
+          <div id="lotQuickToggles" class="controls" style="margin:8px 0;gap:6px;flex-wrap:wrap"></div>
           <p class="hint">
             Editable: <b>GST TDS Rate · GST TDS · SD Expected · SD Received · SD Date · FP Expected · FP Received · FP Date</b> — GST is display-only.
             everything else recalculates live: Total Receivables in Cash = Material Value + GST + TCS − Net Service Charge − TDS 194O − GST TDS,
@@ -4371,8 +4372,27 @@ function buildStaticUI() {
     b.addEventListener('click', function () { doExport(b.dataset.fmt); });
   });
 }
+function renderLotQuickToggles() {
+  var box = document.getElementById('lotQuickToggles');
+  if (!box) return;
+  var catalog = allAssignableFields('detail');
+  box.innerHTML = '<span class="muted" style="font-size:12px;padding:7px 2px">Show/hide:</span>' + catalog.map(function (c) {
+    var on = colLayout.detail.indexOf(c.key) !== -1;
+    return '<button type="button" class="btn ' + (on ? 'primary' : '') + '" data-quick-col="' + escHtml(c.key) + '" aria-pressed="' + on + '">' + escHtml(c.label) + '</button>';
+  }).join('');
+  box.querySelectorAll('[data-quick-col]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-quick-col'), i = colLayout.detail.indexOf(key);
+      pushHistory();
+      if (i >= 0) { if (colLayout.detail.length <= 1) return; colLayout.detail.splice(i, 1); }
+      else colLayout.detail.push(key);
+      saveState(); renderAll();
+    });
+  });
+}
 function renderAll() {
   renderCards();
+  renderLotQuickToggles();
   renderPivot();
   renderDetail();
   updateUndoRedoUI();
