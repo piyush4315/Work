@@ -399,6 +399,8 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
    until the user focuses the editable field. */
 .date-empty-editor.is-empty > input[type=date] { opacity: 0; }
 .date-empty-editor.is-empty:focus-within > input[type=date] { opacity: 1; }
+/* Filled dates stay clean; the date input remains editable by clicking its value. */
+.date-empty-editor.has-date > input[type=date]::-webkit-calendar-picker-indicator { display: none; }
 </style>
 </head>
 <body>
@@ -3017,7 +3019,7 @@ function renderDetailInto(tableId, countId) {
       }
       if (kind === 'date-edit') {
         var dateReceiptEmpty = isReceiptDateField(f) && isEmptyReceiptDate(v);
-        return '<td class="edit" data-field="' + escHtml(f) + '"><div class="date-empty-editor' + (dateReceiptEmpty ? ' is-empty' : '') + '"><input type="date" value="' + escHtml(toISODate(v)) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/>' +
+        return '<td class="edit" data-field="' + escHtml(f) + '"><div class="date-empty-editor' + (dateReceiptEmpty ? ' is-empty' : ' has-date') + '"><input type="date" value="' + escHtml(toISODate(v)) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/>' +
           (dateReceiptEmpty ? '<span class="empty-mark" aria-hidden="true">—</span>' : '') + '</div></td>';
       }
       if (kind === 'edit-text' || (isCustomField(f) && (!customColById(f) || customColById(f).type === 'text'))) {
@@ -3326,7 +3328,9 @@ function beginEdit(input) {
 function syncReceiptDateEditor(input) {
   var field = input && input.dataset ? input.dataset.field : '';
   if (!isReceiptDateField(field) || !input.parentElement || !input.parentElement.classList.contains('date-empty-editor')) return;
-  input.parentElement.classList.toggle('is-empty', isEmptyReceiptDate(input.value));
+  var empty = isEmptyReceiptDate(input.value);
+  input.parentElement.classList.toggle('is-empty', empty);
+  input.parentElement.classList.toggle('has-date', !empty);
 }
 function onEditInput(input) {
   if (!pendingEdit || pendingEdit.input !== input) return;
