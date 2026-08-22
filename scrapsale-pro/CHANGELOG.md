@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-22
+- Seed data refreshed from `Combined_Bid_Sheet 17.08.2026 (2).xlsx` (source commit `019f489e509f105d264e7fe3ba19f86942350c63`).
+- Embedded app data and `data/sample-lots.json` now use the refreshed workbook values, including updated payment receipts and invoices.
+- localStorage key bumped to `scrapsale_pro_v5` so existing browsers load the refreshed seed data.
+
+
 ## 2026-08-21
 - Seed: Combined Bid Sheet 17.08.2026 — 37 lots, auctions 21977–21980
 - localStorage key: `scrapsale_pro_v4`

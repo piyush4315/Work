@@ -2,11 +2,12 @@
 
 | File | Purpose |
 |---|---|
-| `sample-lots.json` | Seed dataset (37 lots, auctions 21977–21980). Safe to commit. |
+| `sample-lots.json` | Current seed dataset (37 lots, auctions 21977–21980). Safe to commit. |
+| `Combined_Bid_Sheet 17.08.2026 (2).xlsx` | Source workbook used for the current seed data. |
 
 ## Your live lots are not in Git
 
-Edits you make in the browser are stored in **localStorage** (`scrapsale_pro_v4`), not in this folder.
+Edits you make in the browser are stored in **localStorage** (`scrapsale_pro_v5`), not in this folder. The key was bumped for the 2026-08-22 workbook refresh so existing browsers load the updated seed data.
 
 Before you switch machines or AIs:
 

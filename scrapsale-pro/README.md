@@ -13,7 +13,8 @@ scrapsale-pro/
 ├── ScrapSale_Pro.html        ← the entire application
 ├── data/
 │   ├── README.md
-│   └── sample-lots.json      ← seed data (37 lots)
+│   ├── sample-lots.json      ← current seed data (37 lots)
+│   └── Combined_Bid_Sheet 17.08.2026 (2).xlsx ← source workbook
 └── docs/
     ├── HANDOFF.md            ← give this to the next AI / teammate
     └── FORMULAS.md           ← calculation rules
@@ -30,14 +31,14 @@ scrapsale-pro/
    # then open http://localhost:8765/ScrapSale_Pro.html
    ```
 
-3. First launch loads the 37 sample lots (auctions 21977–21980).
+3. First launch loads the 37 lots from `Combined_Bid_Sheet 17.08.2026 (2).xlsx` (auctions 21977–21980).
 
 ## Save your work
 
 | What | Where |
 |---|---|
 | Code / UI / formulas | This Git repo (`ScrapSale_Pro.html`) |
-| Lots you type or import | Browser **localStorage** (`scrapsale_pro_v4`) — **not** in Git |
+| Lots you type or import | Browser **localStorage** (`scrapsale_pro_v5`) — **not** in Git |
 
 **Before you change computers, browsers, or AIs:**
 
