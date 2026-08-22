@@ -200,6 +200,20 @@ td.edit input[type=number],
 #detailTableDash td.edit[data-field="fp_received"] {
   text-align: right !important;
 }
+/* The native number stepper occupies space inside the editable cell. Offset only
+   the matching footer totals so their last digit sits below the value above. */
+#detailTable tfoot td[data-field="gst_tds"],
+#detailTable tfoot td[data-field="sd_expected"],
+#detailTable tfoot td[data-field="sd_received"],
+#detailTable tfoot td[data-field="fp_expected"],
+#detailTable tfoot td[data-field="fp_received"],
+#detailTableDash tfoot td[data-field="gst_tds"],
+#detailTableDash tfoot td[data-field="sd_expected"],
+#detailTableDash tfoot td[data-field="sd_received"],
+#detailTableDash tfoot td[data-field="fp_expected"],
+#detailTableDash tfoot td[data-field="fp_received"] {
+  padding-right: 27px !important;
+}
 td.edit input[type=date] { text-align: center; font-size: 11px; width: 116px; }
 .rowdel { opacity: 0; border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; line-height: 1; }
 tr:hover .rowdel { opacity: 1; }
@@ -3021,7 +3035,7 @@ function renderDetailInto(tableId, countId) {
     if (numericFields.indexOf(f) !== -1 || (custom && custom.type === 'number')) {
       var s = rows.reduce(function (a, r) { return a + numOr(getLotField(r, f)); }, 0);
       var cls = f === 'outstanding' ? ((s > 1 ? 'pos' : (s < -1 ? 'neg' : 'zero'))) : (fieldKind(f) === 'strong' ? 'strong' : '');
-      return '<td class="' + cls + '">' + inr(s, Number.isInteger(s) ? 0 : 2) + '</td>';
+      return '<td class="' + cls + '" data-field="' + escHtml(f) + '">' + inr(s, Number.isInteger(s) ? 0 : 2) + '</td>';
     }
     return '<td></td>';
   }).join('') + '<td></td></tr>';
@@ -3254,7 +3268,7 @@ function renderDetailFooter() {
       if (numericFields.indexOf(f) !== -1 || (custom && custom.type === 'number')) {
         var s = rows.reduce(function (a, r) { return a + numOr(getLotField(r, f)); }, 0);
         var cls = f === 'outstanding' ? ((s > 1 ? 'pos' : (s < -1 ? 'neg' : 'zero'))) : (fieldKind(f) === 'strong' ? 'strong' : '');
-        return '<td class="' + cls + '">' + inr(s, Number.isInteger(s) ? 0 : 2) + '</td>';
+        return '<td class="' + cls + '" data-field="' + escHtml(f) + '">' + inr(s, Number.isInteger(s) ? 0 : 2) + '</td>';
       }
       return '<td></td>';
     }).join('') + '<td></td></tr>';
