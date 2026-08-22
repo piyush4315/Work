@@ -383,11 +383,11 @@ tr:hover .rowedit, tr:hover .rowdel { opacity: 1; }
   width: 14px; height: 14px; border-radius: 99px; border: 1px solid var(--line);
   background: #fff; position: relative; flex-shrink: 0; transition: background .15s, border-color .15s;
 }
-.col-toggle.on { border-color: var(--accent-2); background: #eff6ff; color: var(--accent-2); }
-.col-toggle.on .dot { background: var(--accent-2); border-color: var(--accent-2); }
+.col-toggle.on { border-color: var(--accent-2); background: var(--accent-2); color: #fff; }
+.col-toggle.on .dot { background: #fff; border-color: #fff; }
 .col-toggle.on .dot::after {
   content: ''; position: absolute; left: 4px; top: 3px; width: 4px; height: 7px;
-  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  border: solid var(--accent-2); border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 .col-toggle.off { opacity: .55; }
 .col-toggle:hover { border-color: var(--accent-2); }
