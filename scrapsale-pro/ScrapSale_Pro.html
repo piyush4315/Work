@@ -470,6 +470,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
               </div>
             </div>
           </h2>
+          <div id="pivotQuickToggles" class="controls" style="margin:8px 0 14px;gap:6px;flex-wrap:wrap" aria-label="Pivot Analytics column visibility"></div>
           <div class="controls" style="margin-bottom:14px">
             <div>
               <label>Group by</label>
@@ -2802,7 +2803,9 @@ function allAssignableFields(which) {
     DEFAULT_DETAIL_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
     customCols.forEach(function (c) { out.push({ key: c.id, label: c.name + ' (custom)' }); });
   } else if (which === 'pivotLot') {
-    DEFAULT_DETAIL_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
+    DEFAULT_DETAIL_KEYS.forEach(function (k) {
+      if (k !== 'invoice_no') out.push({ key: k, label: fieldLabel(k) });
+    });
     customCols.forEach(function (c) { out.push({ key: c.id, label: c.name + ' (custom)' }); });
   } else {
     DEFAULT_PIVOT_METRIC_KEYS.forEach(function (k) { out.push({ key: k, label: fieldLabel(k) }); });
@@ -4372,26 +4375,41 @@ function buildStaticUI() {
     b.addEventListener('click', function () { doExport(b.dataset.fmt); });
   });
 }
-function renderLotQuickToggles() {
-  var box = document.getElementById('lotQuickToggles');
+function renderQuickColumnToggles(boxId, layoutKind, label) {
+  var box = document.getElementById(boxId);
   if (!box) return;
-  var catalog = allAssignableFields('detail');
-  box.innerHTML = '<span class="muted" style="font-size:12px;padding:7px 2px">Show/hide:</span>' + catalog.map(function (c) {
-    var on = colLayout.detail.indexOf(c.key) !== -1;
-    return '<button type="button" class="btn ' + (on ? 'primary' : '') + '" data-quick-col="' + escHtml(c.key) + '" aria-pressed="' + on + '">' + escHtml(c.label) + '</button>';
+  var catalog = allAssignableFields(layoutKind);
+  var layout = colLayout[layoutKind];
+  box.innerHTML = '<span class="muted" style="font-size:12px;padding:7px 2px">' + escHtml(label) + ' — show/hide:</span>' + catalog.map(function (c) {
+    var on = layout.indexOf(c.key) !== -1;
+    var action = on ? 'Hide ' : 'Show ';
+    return '<button type="button" class="btn ' + (on ? 'primary' : '') + '" data-quick-col="' + escHtml(c.key) + '" aria-pressed="' + on + '" title="' + escHtml(action + c.label) + '">' + escHtml(c.label) + '</button>';
   }).join('');
   box.querySelectorAll('[data-quick-col]').forEach(function (b) {
     b.addEventListener('click', function () {
-      var key = b.getAttribute('data-quick-col'), i = colLayout.detail.indexOf(key);
+      var key = b.getAttribute('data-quick-col');
+      var i = layout.indexOf(key);
+      if (i >= 0 && layout.length <= 1) {
+        showToast('Keep at least one column.', 'error');
+        return;
+      }
       pushHistory();
-      if (i >= 0) { if (colLayout.detail.length <= 1) return; colLayout.detail.splice(i, 1); }
-      else colLayout.detail.push(key);
+      if (i >= 0) layout.splice(i, 1);
+      else layout.push(key);
       saveState(); renderAll();
     });
   });
 }
+function renderPivotQuickToggles() {
+  var layoutKind = ui.groupBy === 'default' ? 'pivotLot' : 'pivotMetric';
+  renderQuickColumnToggles('pivotQuickToggles', layoutKind, 'Pivot columns');
+}
+function renderLotQuickToggles() {
+  renderQuickColumnToggles('lotQuickToggles', 'detail', 'Lot detail columns');
+}
 function renderAll() {
   renderCards();
+  renderPivotQuickToggles();
   renderLotQuickToggles();
   renderPivot();
   renderDetail();
@@ -4665,4 +4683,3 @@ init();
 </script>
 </body>
 </html>
->
