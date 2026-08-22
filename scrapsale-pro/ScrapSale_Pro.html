@@ -350,6 +350,10 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
 }
 .date-empty-editor.is-empty .empty-mark { display: flex; }
 .date-empty-editor:focus-within .empty-mark { display: none; }
+/* Hide the browser's locale-specific empty date placeholder (for example, mm-dd-yyyy)
+   until the user focuses the editable field. */
+.date-empty-editor.is-empty > input[type=date] { opacity: 0; }
+.date-empty-editor.is-empty:focus-within > input[type=date] { opacity: 1; }
 </style>
 </head>
 <body>
