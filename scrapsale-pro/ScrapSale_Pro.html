@@ -3703,6 +3703,7 @@ function renderColPicker(panelId, layoutKind) {
       (hidden ? '<div class="cm-title">Hidden — tick to show</div>' + hidden : '') +
     '</div>' +
     '<div class="col-picker-foot">' +
+      (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="selectall">Select all</button><button type="button" class="btn" data-act="deselectall">Deselect all</button>' : '') +
       '<button type="button" class="btn" data-act="reset">Reset</button>' +
       (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="unfreeze">' + (ui.freezeDetailField ? 'Unfreeze columns' : 'Freeze: use ⊣ on a header') + '</button>' : '') +
       (layoutKind === 'detail' ? '<button type="button" class="btn primary" data-act="addcol">+ Add column</button>' : '') +
@@ -3712,6 +3713,12 @@ function renderColPicker(panelId, layoutKind) {
       e.stopPropagation();
       var act = b.getAttribute('data-act');
       if (act === 'close') { panel.classList.remove('open'); return; }
+      if (act === 'selectall' || act === 'deselectall') {
+        pushHistory();
+        var allKeys = catalog.map(function (c) { return c.key; });
+        colLayout[layoutKind] = act === 'selectall' ? allKeys : (allKeys.length ? [allKeys[0]] : []);
+        saveState(); renderAll(); renderColPicker(panelId, layoutKind); return;
+      }
       if (act === 'reset') {
         pushHistory();
         if (layoutKind === 'detail') colLayout.detail = DEFAULT_DETAIL_KEYS.slice();
