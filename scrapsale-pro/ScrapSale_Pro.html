@@ -377,18 +377,9 @@ tr:hover .rowedit, tr:hover .rowdel { opacity: 1; }
 .col-toggle {
   font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
   border: 1px solid var(--line); border-radius: 99px; background: #fff; color: var(--ink);
-  padding: 4px 11px; display: inline-flex; align-items: center; gap: 6px; line-height: 1.2;
-}
-.col-toggle .dot {
-  width: 14px; height: 14px; border-radius: 99px; border: 1px solid var(--line);
-  background: #fff; position: relative; flex-shrink: 0; transition: background .15s, border-color .15s;
+  padding: 4px 11px; display: inline-flex; align-items: center; line-height: 1.2;
 }
 .col-toggle.on { border-color: var(--accent-2); background: var(--accent-2); color: #fff; }
-.col-toggle.on .dot { background: #fff; border-color: #fff; }
-.col-toggle.on .dot::after {
-  content: ''; position: absolute; left: 4px; top: 3px; width: 4px; height: 7px;
-  border: solid var(--accent-2); border-width: 0 2px 2px 0; transform: rotate(45deg);
-}
 .col-toggle.off { opacity: .55; }
 .col-toggle:hover { border-color: var(--accent-2); }
 .col-toggle.off:hover { opacity: .85; }
@@ -3807,8 +3798,7 @@ function renderColToggles(containerId, layoutKind) {
   var arr = colLayout[layoutKind] || [];
   container.innerHTML = catalog.map(function (c) {
     var on = arr.indexOf(c.key) !== -1;
-    return '<button type="button" class="col-toggle ' + (on ? 'on' : 'off') + '" data-key="' + escHtml(c.key) + '" title="' + (on ? 'Hide' : 'Show') + ' “' + escHtml(c.label) + '” column">' +
-      '<span class="dot"></span><span class="lbl">' + escHtml(c.label) + '</span></button>';
+    return '<button type="button" class="col-toggle ' + (on ? 'on' : 'off') + '" data-key="' + escHtml(c.key) + '" title="' + (on ? 'Hide' : 'Show') + ' “' + escHtml(c.label) + '” column">' + escHtml(c.label) + '</button>';
   }).join('');
   container.querySelectorAll('.col-toggle').forEach(function (b) {
     b.addEventListener('click', function () {
