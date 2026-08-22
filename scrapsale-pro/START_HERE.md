@@ -18,7 +18,9 @@ scrapsale-pro/
 ├── .gitignore
 ├── index.html              ← convenience launcher
 ├── ScrapSale_Pro.html      ← full application
-├── data/sample-lots.json   ← 37 seed lots
+├── data/
+│   ├── sample-lots.json     ← current 37 seed lots
+│   └── Combined_Bid_Sheet 17.08.2026 (2).xlsx
 └── docs/
     ├── HANDOFF.md
     └── FORMULAS.md
