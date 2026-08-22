@@ -4371,6 +4371,8 @@ function init() {
   var loaded = loadState();
   if (!loaded) lots = SAMPLE_DATA.map(normalizeLot);
   ensureGstTdsRateColumn();
+  /* Buyer is the product default; replace older saved default grouping. */
+  if (!loaded || ui.groupBy === 'default') ui.groupBy = 'buyer';
   buildStaticUI();
   document.getElementById('groupBy').value = ui.groupBy || 'default';
   document.getElementById('auctionFilter').value = ui.auction || 'all';
