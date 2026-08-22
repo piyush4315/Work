@@ -468,6 +468,8 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
                 <button class="btn" id="pivotColsBtn" type="button">Columns ▾</button>
                 <div class="col-picker-panel" id="pivotColPicker"></div>
               </div>
+              <button class="btn" id="pivotShowAllBtn" type="button" title="Show every column (unhide all)">Show all</button>
+              <button class="btn" id="pivotHideAllBtn" type="button" title="Hide every column except the first">Hide all</button>
             </div>
           </h2>
           <div class="controls" style="margin-bottom:14px">
@@ -491,7 +493,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
           <div class="table-wrap">
             <table id="pivotTable"><thead></thead><tbody></tbody><tfoot></tfoot></table>
           </div>
-          <p class="hint" id="pivotHint">Click a row to drill into its lots below. Click a column header to sort. Use Columns to choose what appears in each place.</p>
+          <p class="hint" id="pivotHint">Click a row to drill into its lots below. Click a column header to sort. Use Columns to choose what appears in each place — or Show all / Hide all to unhide or hide every column at once.</p>
         </div>
         <div class="panel" id="dashDetailPanel">
           <div class="detail-header">
@@ -3706,7 +3708,7 @@ function renderColPicker(panelId, layoutKind) {
       (hidden ? '<div class="cm-title">Hidden — tick to show</div>' + hidden : '') +
     '</div>' +
     '<div class="col-picker-foot">' +
-      (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="selectall">Select all</button><button type="button" class="btn" data-act="deselectall">Deselect all</button>' : '') +
+      (layoutKind === 'detail' || layoutKind === 'pivotLot' || layoutKind === 'pivotMetric' ? '<button type="button" class="btn" data-act="selectall">Select all</button><button type="button" class="btn" data-act="deselectall">Deselect all</button>' : '') +
       '<button type="button" class="btn" data-act="reset">Reset</button>' +
       (layoutKind === 'detail' ? '<button type="button" class="btn" data-act="unfreeze">' + (ui.freezeDetailField ? 'Unfreeze columns' : 'Freeze: use ⊣ on a header') + '</button>' : '') +
       (layoutKind === 'detail' ? '<button type="button" class="btn primary" data-act="addcol">+ Add column</button>' : '') +
@@ -3777,6 +3779,14 @@ function setAllDetailColumns(showAll) {
   var catalog = allAssignableFields('detail');
   pushHistory();
   colLayout.detail = showAll ? catalog.map(function (c) { return c.key; }) : [catalog[0].key];
+  saveState(); renderAll();
+}
+function setAllPivotColumns(showAll) {
+  var kind = ui.groupBy === 'default' ? 'pivotLot' : 'pivotMetric';
+  var catalog = allAssignableFields(kind);
+  if (!catalog.length) return;
+  pushHistory();
+  colLayout[kind] = showAll ? catalog.map(function (c) { return c.key; }) : [catalog[0].key];
   saveState(); renderAll();
 }
 function toggleColPicker(panelId, layoutKind, btn) {
@@ -4454,6 +4464,8 @@ function init() {
     var kind = ui.groupBy === 'default' ? 'pivotLot' : 'pivotMetric';
     toggleColPicker('pivotColPicker', kind, e.currentTarget);
   });
+  document.getElementById('pivotShowAllBtn').addEventListener('click', function () { setAllPivotColumns(true); });
+  document.getElementById('pivotHideAllBtn').addEventListener('click', function () { setAllPivotColumns(false); });
   var gEl = document.getElementById('gdriveClientId');
   if (gEl) {
     gEl.value = gdriveClientId || '';
