@@ -503,6 +503,8 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
                 <button class="btn" id="dashColsBtn" type="button">Columns ▾</button>
                 <div class="col-picker-panel" id="dashColPicker"></div>
               </div>
+              <button class="btn" id="dashShowAllBtn" type="button" title="Show every column (unhide all)">Show all</button>
+              <button class="btn" id="dashHideAllBtn" type="button" title="Hide every column except the first">Hide all</button>
               <button class="btn" id="addColBtnDash" type="button">+ Add column</button>
               <button class="btn primary" id="addLotBtnDash" type="button">+ Add row</button>
               <button class="btn" id="clearFilterDash" type="button">Clear selection</button>
@@ -510,7 +512,7 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
           </div>
           <p class="hint">
             Click a buyer above to list <b>all</b> of that buyer’s lots. Use <b>✎</b> to edit the whole row. Click <b>⊢</b> on any Lot detail header to freeze panes at that column while you scroll sideways.
-            Use <b>Columns</b> to pick which field sits in each column place. <b>+ Add column</b> creates a custom field. <b>+ Add row</b> inserts a new lot.
+            Use <b>Columns</b> to pick which field sits in each column place — or <b>Show all / Hide all</b> to unhide or hide every column at once. <b>+ Add column</b> creates a custom field. <b>+ Add row</b> inserts a new lot.
           </p>
           <div class="table-wrap" style="margin-top:10px">
             <table id="detailTableDash" class="lots-table"><thead></thead><tbody></tbody><tfoot></tfoot></table>
@@ -4454,6 +4456,8 @@ function init() {
   document.getElementById('dashColsBtn').addEventListener('click', function (e) {
     e.stopPropagation(); toggleColPicker('dashColPicker', 'detail', e.currentTarget);
   });
+  document.getElementById('dashShowAllBtn').addEventListener('click', function () { setAllDetailColumns(true); });
+  document.getElementById('dashHideAllBtn').addEventListener('click', function () { setAllDetailColumns(false); });
   document.getElementById('selectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(true); });
   document.getElementById('deselectDetailColsBtn').addEventListener('click', function () { setAllDetailColumns(false); });
   document.getElementById('lotsColsBtn').addEventListener('click', function (e) {
