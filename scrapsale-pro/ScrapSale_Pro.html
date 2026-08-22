@@ -169,8 +169,23 @@ td.edit input {
 }
 td.edit:hover input { border-color: #bfdbfe; }
 td.edit input:focus { outline: none; border-color: var(--accent-2); background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
-/* Keep editable numeric values on the same right edge as the read-only amounts. */
-td.edit input[type=number] { padding-right: 0; }
+/* Keep editable receivable values on the same right edge as the read-only amounts. */
+td.edit input[type=number],
+#detailTable td.edit[data-field="gst_tds"] input,
+#detailTable td.edit[data-field="sd_expected"] input,
+#detailTable td.edit[data-field="sd_received"] input,
+#detailTable td.edit[data-field="fp_expected"] input,
+#detailTable td.edit[data-field="fp_received"] input,
+#detailTableDash td.edit[data-field="gst_tds"] input,
+#detailTableDash td.edit[data-field="sd_expected"] input,
+#detailTableDash td.edit[data-field="sd_received"] input,
+#detailTableDash td.edit[data-field="fp_expected"] input,
+#detailTableDash td.edit[data-field="fp_received"] input {
+  text-align: right !important;
+  text-align-last: right;
+  padding-left: 0;
+  padding-right: 0;
+}
 td.edit input[type=date] { text-align: center; font-size: 11px; width: 116px; }
 .rowdel { opacity: 0; border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; line-height: 1; }
 tr:hover .rowdel { opacity: 1; }
