@@ -342,6 +342,15 @@ tbody tr.drill-target { outline: 2px solid #93c5fd; outline-offset: -2px; }
 }
 .quick-add-row input:focus { outline: none; border-color: var(--accent-2); border-style: solid; box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
 .col-type { font-size: 10px; color: var(--muted); font-weight: 600; }
+/* Show an em dash for an unpaid SD/FP cell while keeping the cell editable. */
+.receipt-editor { position: relative; width: 100%; }
+.receipt-editor .empty-mark {
+  position: absolute; inset: 0; z-index: 2; display: none; align-items: center;
+  justify-content: flex-end; padding: 3px 6px; color: var(--muted); pointer-events: none;
+}
+.receipt-editor.date-editor .empty-mark { justify-content: center; }
+.receipt-editor.is-empty .empty-mark { display: flex; }
+.receipt-editor:focus-within .empty-mark { display: none; }
 </style>
 </head>
 <body>
@@ -2654,6 +2663,13 @@ function fieldKind(key) {
   return 'edit-text';
 }
 function isCustomField(key) { return key && String(key).indexOf('c_') === 0; }
+function isReceiptField(key) {
+  return key === 'sd_received' || key === 'fp_received' || key === 'sd_date' || key === 'fp_date';
+}
+function isEmptyReceiptValue(key, value) {
+  if (key === 'sd_date' || key === 'fp_date') return value === null || value === undefined || value === '';
+  return value === null || value === undefined || value === '' || Number(value) === 0;
+}
 function getLotField(r, key) {
   if (isCustomField(key)) {
     var c = customColById(key);
@@ -2748,6 +2764,7 @@ function thPickerHtml(field, table, place, layoutKind) {
 function formatCellValue(r, key) {
   var v = getLotField(r, key);
   var kind = fieldKind(key);
+  if (isReceiptField(key) && isEmptyReceiptValue(key, v)) return '—';
   if (kind === 'date' || kind === 'date-edit') return v ? escHtml(v) : '—';
   if (kind === 'left' || kind === 'edit-text') return escHtml(v === null || v === undefined ? '' : v);
   if (typeof v === 'number' || (v !== '' && v !== null && v !== undefined && isFiniteNum(Number(v)) && !isCustomField(key))) {
@@ -2948,12 +2965,18 @@ function renderDetailInto(tableId, countId) {
       var v = getLotField(r, f);
       var kind = fieldKind(f);
       if (kind === 'edit' || (isCustomField(f) && customColById(f) && customColById(f).type === 'number')) {
-        var val = v === null || v === undefined ? '' : v;
+        var receiptEmpty = isReceiptField(f) && isEmptyReceiptValue(f, v);
+        var val = receiptEmpty ? '' : (v === null || v === undefined ? '' : v);
         var step = (f === 'gst_tds_rate') ? '0.01' : 'any';
-        return '<td class="edit" data-field="' + escHtml(f) + '"><input type="number" step="' + step + '" value="' + escHtml(val) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/></td>';
+        var receiptEditor = receiptEmpty ? ' receipt-editor is-empty' : ' receipt-editor';
+        return '<td class="edit" data-field="' + escHtml(f) + '"><div class="' + receiptEditor.trim() + '"><input type="number" step="' + step + '" value="' + escHtml(val) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/>' +
+          (receiptEmpty ? '<span class="empty-mark" aria-hidden="true">—</span>' : '') + '</div></td>';
       }
       if (kind === 'date-edit') {
-        return '<td class="edit" data-field="' + escHtml(f) + '"><input type="date" value="' + escHtml(toISODate(v)) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/></td>';
+        var dateReceiptEmpty = isReceiptField(f) && isEmptyReceiptValue(f, v);
+        var dateEditor = dateReceiptEmpty ? ' receipt-editor date-editor is-empty' : ' receipt-editor date-editor';
+        return '<td class="edit" data-field="' + escHtml(f) + '"><div class="' + dateEditor.trim() + '"><input type="date" value="' + escHtml(toISODate(v)) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '"/>' +
+          (dateReceiptEmpty ? '<span class="empty-mark" aria-hidden="true">—</span>' : '') + '</div></td>';
       }
       if (kind === 'edit-text' || (isCustomField(f) && (!customColById(f) || customColById(f).type === 'text'))) {
         return '<td class="edit" data-field="' + escHtml(f) + '"><input type="text" value="' + escHtml(v === null || v === undefined ? '' : v) + '" data-lot="' + li + '" data-field="' + escHtml(f) + '" style="text-align:left"/></td>';
@@ -3258,8 +3281,14 @@ function beginEdit(input) {
   var li = +input.dataset.lot;
   pendingEdit = { input: input, idx: li, field: input.dataset.field, snap: snapshotState() };
 }
+function syncReceiptEditor(input) {
+  var field = input && input.dataset ? input.dataset.field : '';
+  if (!isReceiptField(field) || !input.parentElement || !input.parentElement.classList.contains('receipt-editor')) return;
+  input.parentElement.classList.toggle('is-empty', isEmptyReceiptValue(field, input.value));
+}
 function onEditInput(input) {
   if (!pendingEdit || pendingEdit.input !== input) return;
+  syncReceiptEditor(input);
   var r = lots[pendingEdit.idx], f = pendingEdit.field, v = input.value;
   if (isCustomField(f)) {
     var cc = customColById(f);
